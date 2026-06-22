@@ -417,6 +417,46 @@ def test_verify_totals_detects_and_resolves_divergence(app_state, context):
         assert registers.verify_totals("stock") == []
 
 
+def test_sale_on_past_date_blocked_when_stock_arrives_later(app_state, context):
+    engine, registry = app_state
+    past_date = date.today() - timedelta(days=30)
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        currency_id, warehouse_id, counterparty_id, product_id = create_master_data(repository)
+        receipt_id = create_document(
+            repository,
+            "receipt",
+            warehouse_id,
+            counterparty_id,
+            product_id,
+            currency_id,
+            1000,
+        )
+        sale_id = repository.create_document(
+            "sale",
+            {
+                "date": past_date,
+                "counterparty_id": counterparty_id,
+                "warehouse_id": warehouse_id,
+            },
+            {
+                "lines": [
+                    {
+                        "product_id": product_id,
+                        "quantity": "500",
+                        "price": "100.00",
+                        "amount_minor": 500000,
+                        "currency_id": currency_id,
+                    }
+                ]
+            },
+        )
+        poster = DocumentPostingService(connection, registry, context)
+        poster.post("receipt", receipt_id)
+        with pytest.raises(InsufficientStockError, match="на дату"):
+            poster.post("sale", sale_id)
+
+
 def test_closed_period_blocks_document_create(app_state, context):
     engine, registry = app_state
     with transaction(engine) as connection:

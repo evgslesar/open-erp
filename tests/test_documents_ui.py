@@ -185,7 +185,7 @@ def test_posting_sale_without_stock_returns_business_error(client):
     response = test_client.post(document_url + "/post", follow_redirects=False)
     assert response.status_code == 409
     assert "Internal Server Error" not in response.text
-    assert "Negative balance" in response.text or "Операция невозможна" in response.text
+    assert "не хватает" in response.text or "Недостаточно" in response.text
 
 
 def test_order_document_has_no_post_button(client):
@@ -216,3 +216,14 @@ def test_transfer_form_shows_warehouse_dropdowns(client):
     assert form_page.status_code == 200
     assert form_page.text.count("<select") >= 2
     assert "Main" in form_page.text
+
+
+def test_edit_form_initializes_alpine_rows(client):
+    test_client, master = client
+    create = test_client.post(
+        "/documents/sale/new", data=_sale_form(master), follow_redirects=False
+    )
+    edit = test_client.get(create.headers["location"] + "/edit")
+    assert edit.status_code == 200
+    assert "x-data='{\"partName\": \"lines\"" in edit.text
+    assert 'x-data="{ partName' not in edit.text

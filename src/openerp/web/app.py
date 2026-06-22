@@ -21,7 +21,7 @@ from openerp.core.import_export import (
     read_csv_rows,
     read_xlsx_rows,
 )
-from openerp.core.metadata import CatalogDef, DocumentDef, FieldDef, FieldType
+from openerp.core.metadata import CatalogDef, DocumentDef, FieldDef, FieldType, TablePartDef
 from openerp.core.posting import ClosedPeriodError, DocumentPostingService, InsufficientStockError
 from openerp.core.repository import DocumentStateError, Repository
 from openerp.core.security import (
@@ -148,6 +148,21 @@ def safe_redirect_path(next_path: str | None) -> str:
     if not next_path or not next_path.startswith("/") or next_path.startswith("//"):
         return "/"
     return next_path
+
+
+def table_part_rows_for_form(document: dict, part: TablePartDef) -> list[dict]:
+    field_names = {field.name for field in part.fields}
+    rows: list[dict] = []
+    for row in document.get(part.name) or []:
+        cleaned = {name: row[name] for name in field_names if name in row and row[name] is not None}
+        rows.append(cleaned)
+    return rows
+
+
+def table_parts_for_form(document_def: DocumentDef, document: dict) -> dict[str, list[dict]]:
+    return {
+        part.name: table_part_rows_for_form(document, part) for part in document_def.table_parts
+    }
 
 
 def _collect_reference_options(
@@ -513,6 +528,7 @@ def create_app() -> FastAPI:
             {
                 "document_def": document_def,
                 "document": {},
+                "form_table_rows": table_parts_for_form(document_def, {}),
                 "action": f"/documents/{document_name}/new",
                 "references": references,
                 "context": context,
@@ -553,6 +569,7 @@ def create_app() -> FastAPI:
             {
                 "document_def": document_def,
                 "document": document,
+                "form_table_rows": table_parts_for_form(document_def, document),
                 "action": f"/documents/{document_name}/{document_id}/edit",
                 "references": references,
                 "context": context,

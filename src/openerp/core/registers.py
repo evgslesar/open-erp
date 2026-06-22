@@ -23,6 +23,13 @@ def month_start(value: date) -> date:
     return date(value.year, value.month, 1)
 
 
+class NegativeStockBalanceError(ValueError):
+    def __init__(self, register_name: str, row: dict[str, Any]):
+        self.register_name = register_name
+        self.row = row
+        super().__init__(f"Negative balance in register {register_name}: {row}")
+
+
 class RegisterService:
     def __init__(self, connection: Connection, registry: MetadataRegistry, context: RequestContext):
         self.connection = connection
@@ -332,7 +339,7 @@ class RegisterService:
         for row in self.balance(register_name, on_date):
             for resource in register.resources:
                 if row[resource.name] < 0:
-                    raise ValueError(f"Negative balance in register {register_name}: {row}")
+                    raise NegativeStockBalanceError(register_name, dict(row))
 
     def verify_totals(self, register_name: str) -> list[dict[str, Any]]:
         register = self.registry.accumulation_register(register_name)

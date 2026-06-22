@@ -10,6 +10,8 @@ from openerp.core.audit import log_operation
 from openerp.core.context import RequestContext
 from openerp.core.metadata import DocumentStatus, MetadataRegistry
 from openerp.core.repository import Repository
+from openerp.core.naming import catalog_table
+from openerp.core.decimal import to_decimal
 from openerp.core.security import PermissionDenied, require_permission
 
 
@@ -19,6 +21,76 @@ class ClosedPeriodError(RuntimeError):
 
 class InsufficientStockError(RuntimeError):
     pass
+
+
+def _catalog_label(
+    connection: Connection,
+    context: RequestContext,
+    catalog_name: str,
+    item_id: int | None,
+) -> str:
+    if item_id is None:
+        return "?"
+    table = connection.engine._openerp_metadata.tables[catalog_table(catalog_name)]
+    row = connection.execute(
+        select(table.c.name).where(
+            table.c.id == item_id,
+            table.c.organization_id == context.organization_id,
+        )
+    ).first()
+    if row is None:
+        return f"#{item_id}"
+    return str(row._mapping["name"])
+
+
+def format_insufficient_stock_message(
+    connection: Connection,
+    registry: MetadataRegistry,
+    context: RequestContext,
+    register_name: str,
+    row: dict[str, Any],
+    document: dict[str, Any] | None = None,
+) -> str:
+    from decimal import Decimal
+
+    if register_name != "stock":
+        return f"Отрицательный остаток в регистре {register_name}: {row}"
+
+    warehouse_id = row.get("warehouse_id")
+    product_id = row.get("product_id")
+    warehouse = _catalog_label(connection, context, "warehouse", warehouse_id)
+    product = _catalog_label(connection, context, "product", product_id)
+    resulting = row.get("quantity", Decimal("0"))
+    shortage = abs(resulting)
+    doc_date = document.get("date") if document else None
+
+    sale_qty = Decimal("0")
+    if document and document.get("warehouse_id") == warehouse_id:
+        for line in document.get("lines", []):
+            if line.get("product_id") == product_id:
+                sale_qty += to_decimal(line.get("quantity", 0))
+
+    message = (
+        f"Недостаточно товара «{product}» на складе «{warehouse}»"
+        f"{f' на дату {doc_date}' if doc_date else ''}: не хватает {shortage} ед."
+    )
+    if sale_qty > 0:
+        available_before = sale_qty + resulting
+        message += (
+            f" На эту дату на складе было {available_before} ед., "
+            f"в документе указано {sale_qty} ед."
+        )
+    if doc_date and doc_date != date.today():
+        message += (
+            " Отчёт «Остатки товаров» по умолчанию показывает остатки на сегодня — "
+            "укажите в отчёте ту же дату, что в документе."
+        )
+    else:
+        message += (
+            " Оформите поступление на этот склад (с датой не позже реализации) "
+            "или уменьшите количество."
+        )
+    return message
 
 
 class PostingContext:
@@ -55,7 +127,7 @@ class DocumentPostingService:
         document = self.repository.get_document(document_name, document_id)
         self._ensure_period_open(document["date"])
 
-        from openerp.core.registers import RegisterService
+        from openerp.core.registers import NegativeStockBalanceError, RegisterService
 
         registers = RegisterService(self.connection, self.registry, self.context)
         registers.delete_registrator_movements(document_name, document_id)
@@ -76,8 +148,16 @@ class DocumentPostingService:
             if not register.allow_negative:
                 try:
                     registers.assert_no_negative_balances(register.name, document["date"])
-                except ValueError as error:
-                    raise InsufficientStockError(str(error)) from error
+                except NegativeStockBalanceError as error:
+                    message = format_insufficient_stock_message(
+                        self.connection,
+                        self.registry,
+                        self.context,
+                        error.register_name,
+                        error.row,
+                        document,
+                    )
+                    raise InsufficientStockError(message) from error
 
         self.repository.update_document_status(
             document_name,
