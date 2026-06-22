@@ -37,6 +37,10 @@ def client(tmp_path, monkeypatch):
         category_id = repository.create_catalog_item(
             "cash_flow_category", {"name": "Operations", "kind": "operating"}
         )
+        money_account_id = repository.create_catalog_item(
+            "money_account",
+            {"name": "Cash desk", "type": "cash", "currency_id": currency_id},
+        )
 
         receipt_id = repository.create_document(
             "receipt",
@@ -85,6 +89,7 @@ def client(tmp_path, monkeypatch):
             {
                 "date": date.today(),
                 "counterparty_id": counterparty_id,
+                "money_account_id": money_account_id,
                 "cash_flow_category_id": category_id,
                 "direction": "incoming",
                 "amount_minor": 100000,
@@ -124,6 +129,7 @@ def test_settlements_report_shows_counterparty_balance(client):
 def test_cash_report_shows_account_balance(client):
     response = client.get("/reports/cash")
     assert response.status_code == 200
+    assert "Cash desk" in response.text
     assert "100000" in response.text
 
 

@@ -7,7 +7,9 @@ import pytest
 from openerp.core.posting import (
     ClosedPeriodError,
     DocumentPostingService,
+    InsufficientFundsError,
     InsufficientStockError,
+    InvalidPostingError,
     set_closed_period,
 )
 from openerp.core.registers import RegisterService
@@ -162,6 +164,7 @@ def test_trade_metadata_covers_mvp_scope(app_state):
         "currency",
         "unit",
         "cash_flow_category",
+        "money_account",
         "price_type",
     }
     assert {item.name for item in registry.documents()} >= {
@@ -276,6 +279,10 @@ def test_inventory_adjustment_and_payments_update_registers(app_state, context):
             "cash_flow_category",
             {"name": "Оплата покупателей", "kind": "operating"},
         )
+        money_account_id = repository.create_catalog_item(
+            "money_account",
+            {"name": "Касса", "type": "cash", "currency_id": currency_id},
+        )
         adjustment_id = repository.create_document(
             "inventory_adjustment",
             {
@@ -296,6 +303,7 @@ def test_inventory_adjustment_and_payments_update_registers(app_state, context):
             {
                 "date": date.today(),
                 "counterparty_id": counterparty_id,
+                "money_account_id": money_account_id,
                 "cash_flow_category_id": category_id,
                 "direction": "incoming",
                 "amount_minor": 50000,
@@ -312,9 +320,162 @@ def test_inventory_adjustment_and_payments_update_registers(app_state, context):
         cash = registers.balance("cash", date.today())[0]
         settlements = registers.balance("settlements", date.today())[0]
         assert stock["quantity"] == 5
-        assert cash["account_type"] == "cash"
+        assert cash["money_account_id"] == money_account_id
         assert cash["amount_minor"] == 50000
         assert settlements["amount_minor"] == -50000
+
+
+def test_outgoing_payment_is_blocked_without_cash_balance(app_state, context):
+    engine, registry = app_state
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        currency_id, _warehouse_id, counterparty_id, _product_id = create_master_data(repository)
+        category_id = repository.create_catalog_item(
+            "cash_flow_category",
+            {"name": "Оплата поставщикам", "kind": "operating"},
+        )
+        money_account_id = repository.create_catalog_item(
+            "money_account",
+            {"name": "Касса", "type": "cash", "currency_id": currency_id},
+        )
+        payment_id = repository.create_document(
+            "cash_payment",
+            {
+                "date": date.today(),
+                "counterparty_id": counterparty_id,
+                "money_account_id": money_account_id,
+                "cash_flow_category_id": category_id,
+                "direction": "outgoing",
+                "amount_minor": 10000,
+                "currency_id": currency_id,
+            },
+        )
+
+        poster = DocumentPostingService(connection, registry, context)
+        with pytest.raises(InsufficientFundsError, match="Недостаточно денежных средств"):
+            poster.post("cash_payment", payment_id)
+
+
+def test_cash_control_uses_account_total_not_cash_flow_category(app_state, context):
+    engine, registry = app_state
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        currency_id, _warehouse_id, counterparty_id, _product_id = create_master_data(repository)
+        incoming_category_id = repository.create_catalog_item(
+            "cash_flow_category",
+            {"name": "Оплата покупателей", "kind": "operating"},
+        )
+        outgoing_category_id = repository.create_catalog_item(
+            "cash_flow_category",
+            {"name": "Оплата поставщикам", "kind": "operating"},
+        )
+        money_account_id = repository.create_catalog_item(
+            "money_account",
+            {"name": "Касса", "type": "cash", "currency_id": currency_id},
+        )
+        incoming_id = repository.create_document(
+            "cash_payment",
+            {
+                "date": date.today(),
+                "counterparty_id": counterparty_id,
+                "money_account_id": money_account_id,
+                "cash_flow_category_id": incoming_category_id,
+                "direction": "incoming",
+                "amount_minor": 50000,
+                "currency_id": currency_id,
+            },
+        )
+        outgoing_id = repository.create_document(
+            "cash_payment",
+            {
+                "date": date.today(),
+                "counterparty_id": counterparty_id,
+                "money_account_id": money_account_id,
+                "cash_flow_category_id": outgoing_category_id,
+                "direction": "outgoing",
+                "amount_minor": 30000,
+                "currency_id": currency_id,
+            },
+        )
+
+        poster = DocumentPostingService(connection, registry, context)
+        poster.post("cash_payment", incoming_id)
+        poster.post("cash_payment", outgoing_id)
+
+        registers = RegisterService(connection, registry, context)
+        cash = registers.balance(
+            "cash",
+            date.today(),
+            dimensions=["money_account_id", "currency_id"],
+        )[0]
+        assert cash["money_account_id"] == money_account_id
+        assert cash["amount_minor"] == 20000
+
+
+def test_payment_currency_must_match_money_account_currency(app_state, context):
+    engine, registry = app_state
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        currency_id, _warehouse_id, counterparty_id, _product_id = create_master_data(repository)
+        other_currency_id = repository.create_catalog_item(
+            "currency",
+            {"name": "US dollar", "code": "USD", "scale": 2},
+        )
+        category_id = repository.create_catalog_item(
+            "cash_flow_category",
+            {"name": "Оплата покупателей", "kind": "operating"},
+        )
+        money_account_id = repository.create_catalog_item(
+            "money_account",
+            {"name": "Касса", "type": "cash", "currency_id": currency_id},
+        )
+        payment_id = repository.create_document(
+            "cash_payment",
+            {
+                "date": date.today(),
+                "counterparty_id": counterparty_id,
+                "money_account_id": money_account_id,
+                "cash_flow_category_id": category_id,
+                "direction": "incoming",
+                "amount_minor": 10000,
+                "currency_id": other_currency_id,
+            },
+        )
+
+        poster = DocumentPostingService(connection, registry, context)
+        with pytest.raises(InvalidPostingError, match="Валюта платежа"):
+            poster.post("cash_payment", payment_id)
+
+
+def test_cash_payment_requires_cash_money_account(app_state, context):
+    engine, registry = app_state
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        currency_id, _warehouse_id, counterparty_id, _product_id = create_master_data(repository)
+        category_id = repository.create_catalog_item(
+            "cash_flow_category",
+            {"name": "Оплата покупателей", "kind": "operating"},
+        )
+        money_account_id = repository.create_catalog_item(
+            "money_account",
+            {"name": "Расчётный счёт", "type": "bank", "currency_id": currency_id},
+        )
+        payment_id = repository.create_document(
+            "cash_payment",
+            {
+                "date": date.today(),
+                "counterparty_id": counterparty_id,
+                "money_account_id": money_account_id,
+                "cash_flow_category_id": category_id,
+                "direction": "incoming",
+                "amount_minor": 10000,
+                "currency_id": currency_id,
+            },
+        )
+
+        poster = DocumentPostingService(connection, registry, context)
+        with pytest.raises(InvalidPostingError, match="нужен денежный счет типа cash"):
+            poster.post("cash_payment", payment_id)
 
 
 def test_cross_month_balance_uses_totals(app_state, context):

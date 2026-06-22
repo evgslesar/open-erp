@@ -4,9 +4,10 @@ Open ERP — открытая веб-система учёта для малог
 
 MVP покрывает:
 
-- справочники: организации, контрагенты, номенклатура, склады, валюты, единицы, статьи ДДС, типы цен;
+- справочники: организации, контрагенты, номенклатура, склады, валюты, единицы, статьи ДДС, денежные счета, типы цен;
 - документы: поступление, реализация, перемещение, корректировка остатков, заказ покупателя, кассовые и банковские платежи;
-- регистры накопления (остатков и взаиморасчётов) и регистры сведений (цены, курсы валют);
+- регистры накопления (товары, взаиморасчёты, денежные средства) и регистры сведений (цены, курсы валют);
+- сводка на главной (балансы, графики, таблицы);
 - отчёты, печатные формы, импорт/экспорт CSV/XLSX;
 - роли, разрешения, организации, аудит и журнал операций;
 - SQLite по умолчанию, PostgreSQL для роста;
@@ -102,6 +103,7 @@ src/openerp/
 ├── modules/trade/
 │   ├── __init__.py           # register(registry)
 │   ├── metadata.py           # описания модуля trade
+│   ├── migrations.py         # миграции модуля trade
 │   ├── posting.py            # обработчики проведения
 │   ├── reports.py            # обработчики отчётов
 │   └── demo.py               # сид демо-данных
@@ -138,7 +140,9 @@ python -m venv .venv
 .\.venv\Scripts\openerp run --port 8000
 ```
 
-Откройте http://127.0.0.1:8000 и войдите как `admin@example.local` / `admin`.
+Откройте http://127.0.0.1:8000 и войдите как `admin@example.local` / `admin`. На главной странице отобразится сводка: денежные остатки, продажи за месяц, взаиморасчёты, графики и таблицы.
+
+Если база уже была создана до появления учёта денег, повторно выполните `seed-demo` — команда дозаполнит демо-платежи, не дублируя товары.
 
 Запуск в режиме автоперезагрузки для разработки:
 
@@ -175,6 +179,8 @@ $env:OPENERP_DATABASE_URL = "sqlite:///data/dev.db"
 - базовые колонки: `id`, `organization_id`, `created_at`, `created_by`, `updated_at`, `updated_by`, `deletion_mark`, `revision`.
 
 Все прикладные записи имеют `organization_id` — это базовая мультиарендность по организации.
+
+При запуске `init-db` / `init_engine` выполняется `ModuleMigrator`: обновляются версии модулей и применяются миграции (например, `trade/20260622_add_money_accounts` — справочник денежных счетов и поле `money_account_id` в платежах и регистре `cash`).
 
 ## Метаданные и модули
 
@@ -242,6 +248,8 @@ def build_registry() -> MetadataRegistry:
 
 `repost` — это `post` + запись в журнал операций.
 
+Для склада и денежных средств отрицательные остатки запрещены. При проведении продажи система проверяет остаток товара на дату документа. При расходном кассовом или банковском платеже проверяется доступный остаток по денежному счету и валюте; если денег недостаточно, проведение завершается ошибкой `InsufficientFundsError`.
+
 Пример обработчика проведения (`openerp/modules/trade/posting.py:post_receipt`):
 
 ```python
@@ -286,6 +294,8 @@ def post_receipt(context: PostingContext) -> None:
 
 Месячный ключ итогов — `period_start = month_start(period)` (`openerp/core/registers.py:month_start`). Итог за прошлые месяцы + движения текущего = остаток на любую дату.
 
+В модуле `trade` регистр `cash` хранит движения денежных средств по типу счета, денежному счету, статье ДДС и валюте. Контроль отрицательного остатка агрегирует деньги по `money_account_id` и `currency_id`, поэтому расход по одной статье ДДС может использовать общий доступный остаток счета. Отчёт `cash` также показывает итоговый остаток по денежному счету и валюте.
+
 Отчёты (`openerp/modules/trade/reports.py`) — это функции `(connection, registry, context, **params) -> list[dict]`. Параметры приходят из query-string; веб-слой фильтрует их по сигнатуре (`web/app.py:_call_report_handler`), лишние параметры молча отбрасываются.
 
 ```python
@@ -303,19 +313,21 @@ def stock_balance_report(
 
 Регистрация: `registry.register_report_handler("trade.stock_balance_report", stock_balance_report)`.
 
+Сводка для главной страницы — `dashboard_summary(...)` в `openerp/modules/trade/reports.py`. Функция агрегирует остатки денег, продажи с начала месяца, взаиморасчёты, топ товаров и данные для графиков (Chart.js). Маршрут `/` передаёт результат в шаблон `index.html`.
+
 ## Веб-слой (FastAPI)
 
 `openerp/web/app.py:create_app` — фабрика FastAPI:
 
 - подключает `SessionMiddleware` с `secret_key` из настроек;
 - регистрирует шаблоны `Jinja2Templates("src/openerp/web/templates")`;
-- навешивает обработчики ошибок `AuthenticationError` (редирект на `/login`) и `DocumentStateError` (409 + `error.html`).
+- навешивает обработчики ошибок `AuthenticationError` (редирект на `/login`), `DocumentStateError`, `InsufficientStockError`, `InsufficientFundsError` и `InvalidPostingError` (409 + `error.html`).
 
 Маршруты:
 
 | Метод  | Путь                                              | Назначение                                            |
 |--------|---------------------------------------------------|-------------------------------------------------------|
-| GET    | `/`                                               | Главная: список справочников/документов/отчётов       |
+| GET    | `/`                                               | Главная: сводка (KPI, графики, таблицы) + навигация   |
 | GET    | `/login`, POST `/login`, POST `/logout`           | Аутентификация                                        |
 | GET    | `/catalogs/{name}`                                | Список элементов справочника                          |
 | GET/POST | `/catalogs/{name}/new`                          | Создание элемента                                     |
@@ -405,7 +417,7 @@ Cookie-сессии: `Starlette.SessionMiddleware` с `secret_key` из наст
 | Команда                                      | Описание                                                  |
 |----------------------------------------------|-----------------------------------------------------------|
 | `init-db`                                    | Создать схему БД                                          |
-| `seed-demo`                                  | Загрузить демо-данные и пользователя-администратора       |
+| `seed-demo`                                  | Загрузить демо-данные и администратора; повторный запуск дозаполняет денежные платежи, если их ещё нет |
 | `run [--host 127.0.0.1] [--port 8000]`        | Запустить uvicorn                                         |
 | `backup`                                     | Сделать резервную копию SQLite в `backups/`                |
 | `set-password <email> <password>`            | Сменить пароль пользователя                               |
@@ -427,8 +439,10 @@ Cookie-сессии: `Starlette.SessionMiddleware` с `secret_key` из наст
 Покрытие:
 
 - `test_auth.py` — аутентификация, редиректы, сессии;
-- `test_posting.py` — проведение, отмена, пересчёт итогов, неотрицательные остатки;
+- `test_posting.py` — проведение, отмена, пересчёт итогов, неотрицательные остатки товаров и денег;
 - `test_documents_ui.py` — формы документов, добавление строк;
+- `test_demo.py` — идемпотентный `seed-demo`, сводка `dashboard_summary`;
+- `test_dashboard.py` — главная страница с KPI и графиками;
 - `test_reports.py` — отчёты, экспорт, лишние query-параметры;
 - `test_reports_ui_data.py` — данные отчётов и экспорт;
 - `test_import.py` — импорт CSV/XLSX.
@@ -452,7 +466,7 @@ Cookie-сессии: `Starlette.SessionMiddleware` с `secret_key` из наст
 - `Decimal` для денег и количеств; `Integer` хранится в копейках/минутах;
 - даты — `datetime.date`, время — `datetime.datetime` (UTC, naive);
 - все эндпоинты FastAPI получают контекст через `CurrentContext`;
-- ошибки домена — `AuthenticationError`, `PermissionDenied`, `DocumentStateError`, `ClosedPeriodError`.
+- ошибки домена — `AuthenticationError`, `PermissionDenied`, `DocumentStateError`, `ClosedPeriodError`, `InsufficientStockError`, `InsufficientFundsError`, `InvalidPostingError`.
 
 ## Расширение: новый модуль
 

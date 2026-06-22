@@ -7,11 +7,13 @@ from sqlalchemy.engine import Connection
 
 from openerp.core.context import RequestContext
 from openerp.core.posting import DocumentPostingService
+from openerp.core.registers import RegisterService
 from openerp.core.repository import Repository
 from openerp.core.security import hash_password
 
 DEMO_ADMIN_EMAIL = "admin@example.local"
 DEMO_ADMIN_PASSWORD = "admin"
+DEMO_PRODUCT_NAME = "Чай черный, 100 г"
 
 
 def ensure_admin_security(connection: Connection) -> None:
@@ -69,6 +71,7 @@ def ensure_admin_security(connection: Connection) -> None:
         "catalog:currency",
         "catalog:unit",
         "catalog:cash_flow_category",
+        "catalog:money_account",
         "catalog:price_type",
         "document:receipt",
         "document:sale",
@@ -98,45 +101,148 @@ def ensure_admin_security(connection: Connection) -> None:
                 )
 
 
-def seed_demo(connection: Connection, registry) -> None:
-    ensure_admin_security(connection)
-    context = RequestContext(user_id=1, organization_id=1, is_admin=True)
-    repository = Repository(connection, registry, context)
-    poster = DocumentPostingService(connection, registry, context)
+def _find_catalog_id(repository: Repository, catalog_name: str, name: str) -> int | None:
+    for item in repository.list_catalog_items(catalog_name, limit=1000):
+        if item["name"] == name:
+            return int(item["id"])
+    return None
 
-    rub_id = repository.create_catalog_item(
-        "currency",
-        {"name": "Российский рубль", "code": "RUB", "scale": 2},
-    )
-    main_warehouse_id = repository.create_catalog_item(
-        "warehouse",
-        {"name": "Основной склад"},
-    )
-    shop_warehouse_id = repository.create_catalog_item(
-        "warehouse",
-        {"name": "Розничный магазин"},
-    )
-    supplier_id = repository.create_catalog_item(
+
+def _get_or_create_catalog(
+    repository: Repository,
+    catalog_name: str,
+    name: str,
+    values: dict,
+) -> int:
+    item_id = _find_catalog_id(repository, catalog_name, name)
+    if item_id is not None:
+        return item_id
+    return repository.create_catalog_item(catalog_name, {"name": name, **values})
+
+
+def ensure_demo_cash_data(
+    connection: Connection,
+    registry,
+    context: RequestContext,
+    repository: Repository,
+    poster: DocumentPostingService,
+) -> bool:
+    registers = RegisterService(connection, registry, context)
+    if registers.balance(
+        "cash",
+        date.today(),
+        dimensions=["money_account_id", "currency_id"],
+    ):
+        return False
+
+    rub_id = _find_catalog_id(repository, "currency", "Российский рубль")
+    if rub_id is None:
+        for item in repository.list_catalog_items("currency", limit=1000):
+            if item.get("code") == "RUB":
+                rub_id = int(item["id"])
+                break
+    if rub_id is None:
+        rub_id = repository.create_catalog_item(
+            "currency",
+            {"name": "Российский рубль", "code": "RUB", "scale": 2},
+        )
+
+    supplier_id = _get_or_create_catalog(
+        repository,
         "counterparty",
-        {"name": 'ООО "Поставщик Север"', "tax_id": "7701234567"},
+        'ООО "Поставщик Север"',
+        {"tax_id": "7701234567"},
     )
-    customer_id = repository.create_catalog_item(
+    customer_id = _get_or_create_catalog(
+        repository,
         "counterparty",
-        {"name": 'ИП Иванов Сергей Петрович', "tax_id": "503212345678"},
+        'ИП Иванов Сергей Петрович',
+        {"tax_id": "503212345678"},
     )
-    tea_id = repository.create_catalog_item(
-        "product",
-        {"name": "Чай черный, 100 г", "sku": "TEA-100", "unit": "шт"},
+    customer_payment_category_id = _get_or_create_catalog(
+        repository,
+        "cash_flow_category",
+        "Оплата покупателей",
+        {"kind": "operating"},
     )
-    coffee_id = repository.create_catalog_item(
-        "product",
-        {"name": "Кофе молотый, 250 г", "sku": "COF-250", "unit": "шт"},
+    supplier_payment_category_id = _get_or_create_catalog(
+        repository,
+        "cash_flow_category",
+        "Оплата поставщикам",
+        {"kind": "operating"},
     )
-    sugar_id = repository.create_catalog_item(
-        "product",
-        {"name": "Сахар-песок, 1 кг", "sku": "SUG-001", "unit": "кг"},
+    cash_account_id = _get_or_create_catalog(
+        repository,
+        "money_account",
+        "Основная касса",
+        {"type": "cash", "currency_id": rub_id},
+    )
+    bank_account_id = _get_or_create_catalog(
+        repository,
+        "money_account",
+        "Расчётный счёт",
+        {"type": "bank", "currency_id": rub_id},
     )
 
+    bank_incoming_id = repository.create_document(
+        "bank_payment",
+        {
+            "date": date.today(),
+            "counterparty_id": customer_id,
+            "money_account_id": bank_account_id,
+            "cash_flow_category_id": customer_payment_category_id,
+            "direction": "incoming",
+            "amount_minor": 495000,
+            "currency_id": rub_id,
+            "comment": "Оплата покупателя за реализацию",
+        },
+    )
+    poster.post("bank_payment", bank_incoming_id)
+
+    cash_incoming_id = repository.create_document(
+        "cash_payment",
+        {
+            "date": date.today(),
+            "counterparty_id": customer_id,
+            "money_account_id": cash_account_id,
+            "cash_flow_category_id": customer_payment_category_id,
+            "direction": "incoming",
+            "amount_minor": 80000,
+            "currency_id": rub_id,
+            "comment": "Розничная выручка в кассу",
+        },
+    )
+    poster.post("cash_payment", cash_incoming_id)
+
+    cash_outgoing_id = repository.create_document(
+        "cash_payment",
+        {
+            "date": date.today(),
+            "counterparty_id": supplier_id,
+            "money_account_id": cash_account_id,
+            "cash_flow_category_id": supplier_payment_category_id,
+            "direction": "outgoing",
+            "amount_minor": 25000,
+            "currency_id": rub_id,
+            "comment": "Частичная оплата поставщику из кассы",
+        },
+    )
+    poster.post("cash_payment", cash_outgoing_id)
+    return True
+
+
+def _seed_demo_trade_documents(
+    repository: Repository,
+    poster: DocumentPostingService,
+    rub_id: int,
+    main_warehouse_id: int,
+    shop_warehouse_id: int,
+    supplier_id: int,
+    customer_id: int,
+    tea_id: int,
+    coffee_id: int,
+    sugar_id: int,
+) -> None:
     receipt_id = repository.create_document(
         "receipt",
         {
@@ -230,3 +336,58 @@ def seed_demo(connection: Connection, registry) -> None:
         },
     )
     poster.post("receipt", shop_receipt_id)
+
+
+def seed_demo(connection: Connection, registry) -> None:
+    ensure_admin_security(connection)
+    context = RequestContext(user_id=1, organization_id=1, is_admin=True)
+    repository = Repository(connection, registry, context)
+    poster = DocumentPostingService(connection, registry, context)
+
+    if _find_catalog_id(repository, "product", DEMO_PRODUCT_NAME) is None:
+        rub_id = repository.create_catalog_item(
+            "currency",
+            {"name": "Российский рубль", "code": "RUB", "scale": 2},
+        )
+        main_warehouse_id = repository.create_catalog_item(
+            "warehouse",
+            {"name": "Основной склад"},
+        )
+        shop_warehouse_id = repository.create_catalog_item(
+            "warehouse",
+            {"name": "Розничный магазин"},
+        )
+        supplier_id = repository.create_catalog_item(
+            "counterparty",
+            {"name": 'ООО "Поставщик Север"', "tax_id": "7701234567"},
+        )
+        customer_id = repository.create_catalog_item(
+            "counterparty",
+            {"name": 'ИП Иванов Сергей Петрович', "tax_id": "503212345678"},
+        )
+        tea_id = repository.create_catalog_item(
+            "product",
+            {"name": DEMO_PRODUCT_NAME, "sku": "TEA-100", "unit": "шт"},
+        )
+        coffee_id = repository.create_catalog_item(
+            "product",
+            {"name": "Кофе молотый, 250 г", "sku": "COF-250", "unit": "шт"},
+        )
+        sugar_id = repository.create_catalog_item(
+            "product",
+            {"name": "Сахар-песок, 1 кг", "sku": "SUG-001", "unit": "кг"},
+        )
+        _seed_demo_trade_documents(
+            repository,
+            poster,
+            rub_id,
+            main_warehouse_id,
+            shop_warehouse_id,
+            supplier_id,
+            customer_id,
+            tea_id,
+            coffee_id,
+            sugar_id,
+        )
+
+    ensure_demo_cash_data(connection, registry, context, repository, poster)

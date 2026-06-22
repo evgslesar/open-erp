@@ -23,6 +23,14 @@ class InsufficientStockError(RuntimeError):
     pass
 
 
+class InsufficientFundsError(RuntimeError):
+    pass
+
+
+class InvalidPostingError(RuntimeError):
+    pass
+
+
 def _catalog_label(
     connection: Connection,
     context: RequestContext,
@@ -93,6 +101,46 @@ def format_insufficient_stock_message(
     return message
 
 
+def format_insufficient_balance_message(
+    connection: Connection,
+    registry: MetadataRegistry,
+    context: RequestContext,
+    register_name: str,
+    row: dict[str, Any],
+    document: dict[str, Any] | None = None,
+) -> str:
+    if register_name == "stock":
+        return format_insufficient_stock_message(
+            connection,
+            registry,
+            context,
+            register_name,
+            row,
+            document,
+        )
+    if register_name != "cash":
+        return f"Отрицательный остаток в регистре {register_name}: {row}"
+
+    money_account_id = row.get("money_account_id")
+    money_account = _catalog_label(connection, context, "money_account", money_account_id)
+    resulting = to_decimal(row.get("amount_minor", 0))
+    shortage = abs(resulting)
+    doc_date = document.get("date") if document else None
+    message = (
+        f"Недостаточно денежных средств на счете «{money_account}»"
+        f"{f' на дату {doc_date}' if doc_date else ''}: не хватает {int(shortage)} коп."
+    )
+    if document and document.get("money_account_id") == money_account_id:
+        amount_minor = int(document.get("amount_minor") or 0)
+        available_before = amount_minor + resulting
+        message += (
+            f" На эту дату было доступно {int(available_before)} коп., "
+            f"в документе указано {amount_minor} коп."
+        )
+    message += " Пополните счет документом прихода или уменьшите сумму расхода."
+    return message
+
+
 class PostingContext:
     def __init__(
         self,
@@ -149,7 +197,7 @@ class DocumentPostingService:
                 try:
                     registers.assert_no_negative_balances(register.name, document["date"])
                 except NegativeStockBalanceError as error:
-                    message = format_insufficient_stock_message(
+                    message = format_insufficient_balance_message(
                         self.connection,
                         self.registry,
                         self.context,
@@ -157,6 +205,8 @@ class DocumentPostingService:
                         error.row,
                         document,
                     )
+                    if error.register_name == "cash":
+                        raise InsufficientFundsError(message) from error
                     raise InsufficientStockError(message) from error
 
         self.repository.update_document_status(

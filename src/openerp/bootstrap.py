@@ -8,6 +8,7 @@ from openerp.core.migrations import ModuleMigrator
 from openerp.core.schema import create_all
 from openerp.db import create_db_engine, transaction
 from openerp.modules.trade import register as register_trade
+from openerp.modules.trade.migrations import trade_migrations
 
 
 def build_registry() -> MetadataRegistry:
@@ -23,5 +24,5 @@ def init_engine(database_url: str | None = None) -> tuple[Engine, MetadataRegist
     metadata = create_all(engine, registry)
     engine._openerp_metadata = metadata
     with transaction(engine) as connection:
-        ModuleMigrator(registry).apply(connection)
+        ModuleMigrator(registry, trade_migrations).apply(connection)
     return engine, registry

@@ -3,27 +3,154 @@
 
 {% block content %}
 <div class="space-y-6">
-  <div>
-    <h1 class="text-2xl font-semibold text-primary-dark">Управленческий учёт</h1>
-    <p class="text-sm text-slate-500 mt-1">Торговля, склад, деньги, отчёты и печатные формы.</p>
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold text-primary-dark">Управленческий учёт</h1>
+      <p class="text-sm text-slate-500 mt-1">Сводка на {{ dashboard.on_date.strftime('%d.%m.%Y') }}</p>
+    </div>
+    <a href="/reports/cash?on_date={{ dashboard.on_date.isoformat() }}"
+       class="text-sm text-primary hover:text-primary-dark font-medium">
+      Подробный отчёт по деньгам →
+    </a>
+  </div>
+
+  {# KPI cards #}
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+    <div class="bg-surface-card border border-surface-border rounded-xl p-5">
+      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">Денежные средства</div>
+      <div class="mt-2 text-2xl font-semibold text-primary-dark num">{{ dashboard.cash_total_minor | money }} ₽</div>
+      <div class="mt-1 text-xs text-slate-500">{{ dashboard.cash_accounts | length }} счет(ов)</div>
+    </div>
+    <div class="bg-surface-card border border-surface-border rounded-xl p-5">
+      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">Продажи с начала месяца</div>
+      <div class="mt-2 text-2xl font-semibold text-primary-dark num">{{ dashboard.sales_month_minor | money }} ₽</div>
+      <a href="/reports/sales?date_from={{ dashboard.on_date.replace(day=1).isoformat() }}&date_to={{ dashboard.on_date.isoformat() }}"
+         class="mt-1 inline-block text-xs text-primary hover:text-primary-dark">Отчёт по продажам →</a>
+    </div>
+    <div class="bg-surface-card border border-surface-border rounded-xl p-5">
+      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">Нам должны</div>
+      <div class="mt-2 text-2xl font-semibold text-emerald-700 num">{{ dashboard.receivable_minor | money }} ₽</div>
+      <a href="/reports/settlements?on_date={{ dashboard.on_date.isoformat() }}"
+         class="mt-1 inline-block text-xs text-primary hover:text-primary-dark">Взаиморасчёты →</a>
+    </div>
+    <div class="bg-surface-card border border-surface-border rounded-xl p-5">
+      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">Мы должны</div>
+      <div class="mt-2 text-2xl font-semibold text-rose-700 num">{{ dashboard.payable_minor | money }} ₽</div>
+      <div class="mt-1 text-xs text-slate-500">{{ dashboard.stock_positions }} позиций на складах</div>
+    </div>
+  </div>
+
+  {# Charts #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="bg-surface-card border border-surface-border rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-slate-700 mb-4">Остатки по денежным счетам</h2>
+      {% if dashboard.cash_chart.labels %}
+      <div class="h-64">
+        <canvas id="cashChart"></canvas>
+      </div>
+      {% else %}
+      <p class="text-sm text-slate-400 py-10 text-center">Нет движений по деньгам. Оформите кассовый или банковский платёж.</p>
+      {% endif %}
+    </div>
+    <div class="bg-surface-card border border-surface-border rounded-xl p-5">
+      <h2 class="text-sm font-semibold text-slate-700 mb-4">Товары на складах</h2>
+      {% if dashboard.stock_chart.labels %}
+      <div class="h-64">
+        <canvas id="stockChart"></canvas>
+      </div>
+      {% else %}
+      <p class="text-sm text-slate-400 py-10 text-center">Склад пуст. Оформите поступление товаров.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if dashboard.sales_chart.labels %}
+  <div class="bg-surface-card border border-surface-border rounded-xl p-5">
+    <h2 class="text-sm font-semibold text-slate-700 mb-4">Продажи за месяц по товарам</h2>
+    <div class="h-56">
+      <canvas id="salesChart"></canvas>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Detail tables #}
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+    <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-surface-border">
+        <h2 class="text-sm font-semibold text-slate-700">Денежные счета</h2>
+      </div>
+      <table class="w-full text-sm">
+        <tbody class="divide-y divide-surface-border">
+          {% for row in dashboard.cash_accounts %}
+          <tr>
+            <td class="px-4 py-2.5 text-slate-700">{{ row.money_account_name }}</td>
+            <td class="px-4 py-2.5 text-right num text-slate-600">{{ row.amount_minor | money }} ₽</td>
+          </tr>
+          {% else %}
+          <tr><td class="px-4 py-8 text-center text-slate-400" colspan="2">Нет остатков</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-surface-border">
+        <h2 class="text-sm font-semibold text-slate-700">Топ остатков товаров</h2>
+      </div>
+      <table class="w-full text-sm">
+        <tbody class="divide-y divide-surface-border">
+          {% for row in dashboard.top_stock %}
+          <tr>
+            <td class="px-4 py-2.5 text-slate-700">{{ row.product_name }}</td>
+            <td class="px-4 py-2.5 text-right num text-slate-600">{{ row.quantity }}</td>
+          </tr>
+          {% else %}
+          <tr><td class="px-4 py-8 text-center text-slate-400" colspan="2">Нет остатков</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-surface-border">
+        <h2 class="text-sm font-semibold text-slate-700">Взаиморасчёты</h2>
+      </div>
+      <table class="w-full text-sm">
+        <tbody class="divide-y divide-surface-border">
+          {% for row in dashboard.top_settlements %}
+          <tr>
+            <td class="px-4 py-2.5 text-slate-700">{{ row.counterparty_name }}</td>
+            <td class="px-4 py-2.5 text-right num {% if row.amount_minor < 0 %}text-rose-700{% else %}text-emerald-700{% endif %}">
+              {{ row.amount_minor | money }} ₽
+            </td>
+          </tr>
+          {% else %}
+          <tr><td class="px-4 py-8 text-center text-slate-400" colspan="2">Нет задолженностей</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 
   {# Quick actions #}
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-    {% for document in documents[:4] %}
-    <a href="/documents/{{ document.name }}/new"
-       class="group bg-surface-card border border-surface-border rounded-xl p-4 hover:border-primary hover:shadow-md transition-all cursor-pointer">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+  <div>
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">Быстрые действия</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {% for document in documents[:4] %}
+      <a href="/documents/{{ document.name }}/new"
+         class="group bg-surface-card border border-surface-border rounded-xl p-4 hover:border-primary hover:shadow-md transition-all cursor-pointer">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          </div>
+          <div>
+            <div class="text-sm font-medium text-slate-700 group-hover:text-primary">{{ document.label }}</div>
+            <div class="text-xs text-slate-400">Создать</div>
+          </div>
         </div>
-        <div>
-          <div class="text-sm font-medium text-slate-700 group-hover:text-primary">{{ document.label }}</div>
-          <div class="text-xs text-slate-400">Создать</div>
-        </div>
-      </div>
-    </a>
-    {% endfor %}
+      </a>
+      {% endfor %}
+    </div>
   </div>
 
   {# Catalogs #}
@@ -55,4 +182,82 @@
     </div>
   </section>
 </div>
+
+{% if dashboard.cash_chart.labels or dashboard.stock_chart.labels or dashboard.sales_chart.labels %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+  const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+  };
+
+  {% if dashboard.cash_chart.labels %}
+  new Chart(document.getElementById('cashChart'), {
+    type: 'bar',
+    data: {
+      labels: {{ dashboard.cash_chart.labels | tojson }},
+      datasets: [{
+        data: {{ dashboard.cash_chart['values'] | tojson }},
+        backgroundColor: '#3B82F6',
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      ...chartDefaults,
+      scales: {
+        y: {
+          ticks: {
+            callback: (value) => value.toLocaleString('ru-RU') + ' ₽',
+          },
+        },
+      },
+    },
+  });
+  {% endif %}
+
+  {% if dashboard.stock_chart.labels %}
+  new Chart(document.getElementById('stockChart'), {
+    type: 'doughnut',
+    data: {
+      labels: {{ dashboard.stock_chart.labels | tojson }},
+      datasets: [{
+        data: {{ dashboard.stock_chart['values'] | tojson }},
+        backgroundColor: ['#1E40AF', '#3B82F6', '#60A5FA', '#93C5FD', '#F59E0B'],
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } },
+    },
+  });
+  {% endif %}
+
+  {% if dashboard.sales_chart.labels %}
+  new Chart(document.getElementById('salesChart'), {
+    type: 'bar',
+    data: {
+      labels: {{ dashboard.sales_chart.labels | tojson }},
+      datasets: [{
+        data: {{ dashboard.sales_chart['values'] | tojson }},
+        backgroundColor: '#F59E0B',
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      ...chartDefaults,
+      indexAxis: 'y',
+      scales: {
+        x: {
+          ticks: {
+            callback: (value) => value.toLocaleString('ru-RU') + ' ₽',
+          },
+        },
+      },
+    },
+  });
+  {% endif %}
+</script>
+{% endif %}
 {% endblock %}

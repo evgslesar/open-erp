@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import inspect
 import io
+import json
 from datetime import date
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
+from markupsafe import Markup
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -22,7 +24,13 @@ from openerp.core.import_export import (
     read_xlsx_rows,
 )
 from openerp.core.metadata import CatalogDef, DocumentDef, FieldDef, FieldType, TablePartDef
-from openerp.core.posting import ClosedPeriodError, DocumentPostingService, InsufficientStockError
+from openerp.core.posting import (
+    ClosedPeriodError,
+    DocumentPostingService,
+    InsufficientFundsError,
+    InsufficientStockError,
+    InvalidPostingError,
+)
 from openerp.core.repository import DocumentStateError, Repository
 from openerp.core.security import (
     AuthenticationError,
@@ -31,8 +39,13 @@ from openerp.core.security import (
     load_user_context,
 )
 from openerp.db import transaction
+from openerp.modules.trade.reports import dashboard_summary, format_money_minor
 
 templates = Jinja2Templates(directory="src/openerp/web/templates")
+templates.env.filters["money"] = format_money_minor
+templates.env.filters["tojson"] = lambda value: Markup(
+    json.dumps(value, ensure_ascii=False)
+)
 
 
 def catalog_by_name(registry, catalog_name: str) -> CatalogDef:
@@ -256,6 +269,24 @@ def create_app() -> FastAPI:
             status_code=409,
         )
 
+    @app.exception_handler(InsufficientFundsError)
+    async def on_insufficient_funds(request: Request, exc: InsufficientFundsError):
+        return templates.TemplateResponse(
+            request,
+            "error.html",
+            {"message": str(exc), "context": None},
+            status_code=409,
+        )
+
+    @app.exception_handler(InvalidPostingError)
+    async def on_invalid_posting(request: Request, exc: InvalidPostingError):
+        return templates.TemplateResponse(
+            request,
+            "error.html",
+            {"message": str(exc), "context": None},
+            status_code=409,
+        )
+
     @app.exception_handler(ClosedPeriodError)
     async def on_closed_period(request: Request, exc: ClosedPeriodError):
         return templates.TemplateResponse(
@@ -281,6 +312,8 @@ def create_app() -> FastAPI:
             for module in registry.modules.values()
             for report in module.reports
         ]
+        with transaction(engine) as connection:
+            dashboard = dashboard_summary(connection, registry, context)
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -288,6 +321,7 @@ def create_app() -> FastAPI:
                 "catalogs": registry.catalogs(),
                 "documents": registry.documents(),
                 "reports": reports,
+                "dashboard": dashboard,
                 "context": context,
             },
         )

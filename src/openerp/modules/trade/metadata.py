@@ -60,6 +60,15 @@ cash_flow_category = CatalogDef(
     fields=(FieldDef("kind", FieldType.STRING, "Вид", required=True, indexed=True),),
 )
 
+money_account = CatalogDef(
+    name="money_account",
+    label="Денежные счета",
+    fields=(
+        FieldDef("type", FieldType.STRING, "Тип", required=True, default="cash", indexed=True),
+        FieldDef("currency_id", FieldType.INTEGER, "Валюта", required=True, indexed=True),
+    ),
+)
+
 price_type = CatalogDef(
     name="price_type",
     label="Типы цен",
@@ -190,6 +199,13 @@ cash_payment = DocumentDef(
     fields=(
         FieldDef("counterparty_id", FieldType.INTEGER, "Контрагент", required=True, indexed=True),
         FieldDef(
+            "money_account_id",
+            FieldType.INTEGER,
+            "Денежный счет",
+            required=True,
+            indexed=True,
+        ),
+        FieldDef(
             "cash_flow_category_id",
             FieldType.INTEGER,
             "Статья ДДС",
@@ -236,6 +252,7 @@ cash_register = AccumulationRegisterDef(
     label="Денежные средства",
     dimensions=(
         FieldDef("account_type", FieldType.STRING, "Тип счета", required=True, indexed=True),
+        FieldDef("money_account_id", FieldType.INTEGER, "Денежный счет", required=True, indexed=True),
         FieldDef(
             "cash_flow_category_id",
             FieldType.INTEGER,
@@ -246,7 +263,6 @@ cash_register = AccumulationRegisterDef(
         FieldDef("currency_id", FieldType.INTEGER, "Валюта", required=True, indexed=True),
     ),
     resources=(FieldDef("amount_minor", FieldType.MONEY, "Сумма в копейках", required=True),),
-    allow_negative=True,
 )
 
 price_register = InformationRegisterDef(
@@ -280,6 +296,7 @@ trade_module = ModuleDef(
         currency,
         unit,
         cash_flow_category,
+        money_account,
         price_type,
     ),
     documents=(

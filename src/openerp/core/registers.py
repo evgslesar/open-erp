@@ -336,7 +336,10 @@ class RegisterService:
         register = self.registry.accumulation_register(register_name)
         if register.allow_negative:
             return
-        for row in self.balance(register_name, on_date):
+        dimensions = None
+        if register_name == "cash":
+            dimensions = ["money_account_id", "currency_id"]
+        for row in self.balance(register_name, on_date, dimensions=dimensions):
             for resource in register.resources:
                 if row[resource.name] < 0:
                     raise NegativeStockBalanceError(register_name, dict(row))
