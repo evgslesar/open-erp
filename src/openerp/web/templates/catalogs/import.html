@@ -1,41 +1,76 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>Импорт: {{ catalog.label }}</h1>
+<div class="max-w-2xl space-y-4">
+  <div>
+    <nav class="text-xs text-slate-400 mb-1">
+      <a href="/" class="hover:text-primary">Главная</a>
+      <span class="mx-1">/</span>
+      <a href="/catalogs/{{ catalog.name }}" class="hover:text-primary">{{ catalog.label }}</a>
+      <span class="mx-1">/</span>
+      <span>Импорт</span>
+    </nav>
+    <h1 class="text-xl font-semibold text-primary-dark">Импорт: {{ catalog.label }}</h1>
+  </div>
 
-<div style="margin: 1rem 0;">
-  <a href="/catalogs/{{ catalog.name }}/import-template" role="button" class="secondary outline">
-    Скачать шаблон CSV
-  </a>
-</div>
+  <div class="bg-accent/10 border border-accent/20 rounded-lg px-4 py-3 text-sm text-slate-600">
+    <a href="/catalogs/{{ catalog.name }}/import-template" class="text-primary font-medium hover:underline">
+      Скачать шаблон CSV
+    </a>
+    <span class="text-slate-400"> — заполните колонки и загрузите обратно</span>
+  </div>
 
-<form method="post" action="/catalogs/{{ catalog.name }}/import" enctype="multipart/form-data">
-  <label>
-    Файл (CSV или XLSX)
-    <input type="file" name="file" accept=".csv,.xlsx" required>
-  </label>
-  <label>
-    <input type="checkbox" name="dry_run" value="1">
-    Только проверка (без записи)
-  </label>
-  <button type="submit">Импортировать</button>
-  <a href="/catalogs/{{ catalog.name }}" role="button" class="secondary outline">Отмена</a>
-</form>
+  <form method="post" action="/catalogs/{{ catalog.name }}/import" enctype="multipart/form-data"
+        class="bg-surface-card border border-surface-border rounded-xl p-6 space-y-4">
+    <label class="block">
+      <span class="text-sm font-medium text-slate-700">Файл (CSV или XLSX)</span>
+      <input type="file" name="file" accept=".csv,.xlsx" required
+             class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm file:mr-3 file:px-4 file:py-1.5 file:rounded-md file:border-0 file:bg-primary file:text-white file:text-sm file:cursor-pointer hover:file:bg-primary-dark transition-colors">
+    </label>
+    <label class="inline-flex items-center gap-2">
+      <input type="checkbox" name="dry_run" value="1"
+             class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary">
+      <span class="text-sm text-slate-600">Только проверка (без записи)</span>
+    </label>
+    <div class="flex gap-2 pt-2">
+      <button type="submit"
+              class="px-5 py-2 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition-colors">
+        Импортировать
+      </button>
+      <a href="/catalogs/{{ catalog.name }}"
+         class="px-5 py-2 border border-surface-border text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+        Отмена
+      </a>
+    </div>
+  </form>
 
-{% if result %}
-  <hr>
-  {% if result.errors %}
-    <h3>Ошибки ({{ result.errors | length }})</h3>
-    <table>
-      <thead><tr><th>Строка</th><th>Ошибка</th></tr></thead>
-      <tbody>
-        {% for error in result.errors %}
-          <tr><td>{{ error.row }}</td><td>{{ error.error }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <p><strong>Успешно импортировано: {{ result.imported }} строк</strong></p>
+  {% if result %}
+  <div class="bg-surface-card border border-surface-border rounded-xl p-6">
+    {% if result.errors %}
+    <div class="flex items-center gap-2 mb-3">
+      <svg class="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+      <h3 class="text-sm font-semibold text-red-700">Ошибки ({{ result.errors | length }})</h3>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="text-left border-b border-surface-border"><th class="py-2 pr-4 text-slate-500 font-medium">Строка</th><th class="py-2 text-slate-500 font-medium">Ошибка</th></tr></thead>
+        <tbody class="divide-y divide-surface-border">
+          {% for error in result.errors %}
+          <tr><td class="py-2 pr-4 num text-slate-400">{{ error.row }}</td><td class="py-2 text-red-600">{{ error.error }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if result.imported > 0 %}
+    <p class="mt-3 text-sm text-slate-600">Успешно импортировано: <strong class="text-green-600 num">{{ result.imported }}</strong> строк</p>
+    {% endif %}
+    {% else %}
+    <div class="flex items-center gap-2">
+      <svg class="w-5 h-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <p class="text-sm"><strong class="text-green-600">Успешно импортировано: {{ result.imported }} строк</strong></p>
+    </div>
+    {% endif %}
+  </div>
   {% endif %}
-{% endif %}
+</div>
 {% endblock %}

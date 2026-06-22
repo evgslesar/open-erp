@@ -1,127 +1,153 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>
-  {{ document_def.label }}
-  {% if document.id %}№ {{ document.number }}{% else %}: новый{% endif %}
-</h1>
+<div class="max-w-4xl space-y-5">
+  <div>
+    <nav class="text-xs text-slate-400 mb-1">
+      <a href="/" class="hover:text-primary">Главная</a>
+      <span class="mx-1">/</span>
+      <a href="/documents/{{ document_def.name }}" class="hover:text-primary">{{ document_def.label }}</a>
+      <span class="mx-1">/</span>
+      <span>{{ 'редактирование' if document.id else 'новый' }}</span>
+    </nav>
+    <h1 class="text-xl font-semibold text-primary-dark">
+      {{ document_def.label }}{% if document.number %} <span class="num text-slate-400">{{ document.number }}</span>{% endif %}
+    </h1>
+  </div>
 
-<form method="post" action="{{ action }}">
-  <fieldset>
-    <legend>Шапка документа</legend>
-    <label>
-      Дата
-      <input type="date" name="date" value="{{ document.date or '' }}" required>
-    </label>
-    {% if document.id %}
-      <label>
-        Номер
-        <input type="text" name="number" value="{{ document.number }}" readonly>
-      </label>
-    {% endif %}
-    {% for field in document_def.fields %}
-      <label>
-        {{ field.label }}
-        {% if references and references.get(field.name) is not none %}
-          <select name="{{ field.name }}">
+  <form method="post" action="{{ action }}" class="space-y-5" x-data="{ }">
+    {# Header #}
+    <div class="bg-surface-card border border-surface-border rounded-xl p-6">
+      <h2 class="text-sm font-semibold text-slate-700 mb-4">Шапка документа</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">Дата</span>
+          <input type="date" name="date" value="{{ document.date or '' }}" required
+                 class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+        </label>
+        {% if document.id %}
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">Номер</span>
+          <input type="text" value="{{ document.number }}" readonly
+                 class="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm num bg-slate-50 text-slate-400">
+        </label>
+        {% endif %}
+        {% for field in document_def.fields %}
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">{{ field.label }}{% if field.required %} <span class="text-red-500">*</span>{% endif %}</span>
+          {% if references and references.get(field.name) is not none %}
+          <select name="{{ field.name }}"
+                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow bg-white">
             <option value="">— выбрать —</option>
             {% for item in references[field.name] %}
-              <option value="{{ item.id }}"
-                {% if document.get(field.name) == item.id %}selected{% endif %}>
-                {{ item.name }}
-              </option>
+            <option value="{{ item.id }}" {{ 'selected' if document.get(field.name) == item.id else '' }}>{{ item.name }}</option>
             {% endfor %}
           </select>
-        {% elif field.type == 'text' %}
-          <textarea name="{{ field.name }}">{{ document.get(field.name) or '' }}</textarea>
-        {% elif field.type == 'integer' or field.type == 'money' %}
-          <input type="number" step="1" name="{{ field.name }}"
-            value="{{ document.get(field.name) or '' }}">
-        {% elif field.type == 'decimal' %}
-          <input type="text" inputmode="decimal" name="{{ field.name }}"
-            value="{{ document.get(field.name) or '' }}">
-        {% elif field.type == 'date' %}
-          <input type="date" name="{{ field.name }}"
-            value="{{ document.get(field.name) or '' }}">
-        {% elif field.type == 'boolean' %}
-          <input type="checkbox" name="{{ field.name }}" value="1"
-            {% if document.get(field.name) %}checked{% endif %}>
-        {% else %}
-          <input type="text" name="{{ field.name }}"
-            value="{{ document.get(field.name) or '' }}"
-            {% if field.default %}placeholder="{{ field.default }}"{% endif %}>
-        {% endif %}
+          {% elif field.type == 'integer' or field.type == 'money' %}
+          <input type="number" step="1" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}"
+                 class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+          {% elif field.type == 'decimal' %}
+          <input type="text" inputmode="decimal" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}"
+                 class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+          {% elif field.type == 'boolean' %}
+          <label class="inline-flex items-center gap-2 mt-2">
+            <input type="checkbox" name="{{ field.name }}" value="1" {{ 'checked' if document.get(field.name) else '' }}
+                   class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary">
+            <span class="text-sm text-slate-600">Да</span>
+          </label>
+          {% else %}
+          <input type="text" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}"
+                 class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+          {% endif %}
+        </label>
+        {% endfor %}
+      </div>
+      <label class="block mt-4">
+        <span class="text-sm font-medium text-slate-700">Комментарий</span>
+        <textarea name="comment" rows="2"
+                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">{{ document.get('comment') or '' }}</textarea>
       </label>
-    {% endfor %}
-    <label>
-      Комментарий
-      <textarea name="comment">{{ document.get('comment') or '' }}</textarea>
-    </label>
-  </fieldset>
+    </div>
 
-  {% for part in document_def.table_parts %}
+    {# Table parts #}
+    {% for part in document_def.table_parts %}
     {% set part_rows = document.get(part.name) or [] %}
-    <section x-data="{ rows: {{ part_rows | tojson | safe }} }">
-      <h2>{{ part.label }}</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            {% for field in part.fields %}<th>{{ field.label }}</th>{% endfor %}
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <template x-for="(row, idx) in rows" :key="idx">
-            <tr>
-              <td x-text="idx + 1"></td>
+    <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden"
+         x-data="{ rows: {{ part_rows | tojson | safe }} }">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-surface-border">
+        <h2 class="text-sm font-semibold text-slate-700">{{ part.label }}</h2>
+        <button type="button" @click="rows.push({})"
+                class="inline-flex items-center gap-1 px-2.5 py-1 text-xs border border-surface-border rounded-md hover:bg-slate-50 transition-colors text-slate-600">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          Добавить
+        </button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-slate-50 border-b border-surface-border text-left">
+              <th class="px-3 py-2 font-medium text-slate-400 w-10">#</th>
               {% for field in part.fields %}
-                <td>
-                  {% set field_name = field.name %}
-                  {% set ref_key = field_name %}
-                  {% if references and references.get(ref_key) is not none %}
-                    <select :name="`${part.name}.${idx}.{{ field_name }}`"
-                            x-model="row.{{ field_name }}">
-                      <option value="">—</option>
-                      {% for item in references[ref_key] %}
-                        <option value="{{ item.id }}">{{ item.name }}</option>
-                      {% endfor %}
-                    </select>
+              <th class="px-3 py-2 font-medium text-slate-500">{{ field.label }}</th>
+              {% endfor %}
+              <th class="px-3 py-2 w-10"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-surface-border">
+            <template x-for="(row, idx) in rows" :key="idx">
+              <tr class="hover:bg-slate-50">
+                <td class="px-3 py-1.5 text-slate-400 num" x-text="idx + 1"></td>
+                {% for field in part.fields %}
+                {% set field_name = field.name %}
+                <td class="px-3 py-1.5">
+                  {% if references and references.get(field_name) is not none %}
+                  <select :name="`${part.name}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
+                          class="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-primary outline-none bg-white">
+                    <option value="">—</option>
+                    {% for item in references[field_name] %}
+                    <option value="{{ item.id }}">{{ item.name }}</option>
+                    {% endfor %}
+                  </select>
                   {% elif field.type == 'integer' or field.type == 'money' %}
-                    <input type="number" step="1"
-                           :name="`${part.name}.${idx}.{{ field_name }}`"
-                           x-model="row.{{ field_name }}">
+                  <input type="number" step="1" :name="`${part.name}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
+                         class="w-full px-2 py-1 border border-slate-200 rounded text-xs num focus:ring-1 focus:ring-primary outline-none">
                   {% elif field.type == 'decimal' %}
-                    <input type="text" inputmode="decimal"
-                           :name="`${part.name}.${idx}.{{ field_name }}`"
-                           x-model="row.{{ field_name }}">
-                  {% elif field.type == 'boolean' %}
-                    <input type="checkbox" value="1"
-                           :name="`${part.name}.${idx}.{{ field_name }}`"
-                           x-model="row.{{ field_name }}">
+                  <input type="text" inputmode="decimal" :name="`${part.name}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
+                         class="w-full px-2 py-1 border border-slate-200 rounded text-xs num focus:ring-1 focus:ring-primary outline-none">
                   {% else %}
-                    <input type="text"
-                           :name="`${part.name}.${idx}.{{ field_name }}`"
-                           x-model="row.{{ field_name }}">
+                  <input type="text" :name="`${part.name}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
+                         class="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-primary outline-none">
                   {% endif %}
                 </td>
-              {% endfor %}
-              <td>
-                <button type="button" class="secondary outline"
-                        @click="rows.splice(idx, 1)" title="Удалить строку">✕</button>
-              </td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
-      <button type="button" class="secondary"
-              @click="rows.push({})">+ Добавить строку</button>
-    </section>
-  {% endfor %}
+                {% endfor %}
+                <td class="px-3 py-1.5">
+                  <button type="button" @click="rows.splice(idx, 1)"
+                          class="text-slate-300 hover:text-red-500 transition-colors">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                  </button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      {% if not part_rows %}
+      <p class="px-4 py-3 text-xs text-slate-400 text-center" x-show="rows.length === 0">Нет строк. Нажмите «Добавить».</p>
+      {% endif %}
+    </div>
+    {% endfor %}
 
-  <div class="grid">
-    <button type="submit">Сохранить</button>
-    <a href="/documents/{{ document_def.name }}" role="button" class="secondary outline">Отмена</a>
-  </div>
-</form>
+    {# Actions #}
+    <div class="flex gap-2">
+      <button type="submit"
+              class="px-5 py-2.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition-colors">
+        Сохранить
+      </button>
+      <a href="/documents/{{ document_def.name }}"
+         class="px-5 py-2.5 border border-surface-border text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+        Отмена
+      </a>
+    </div>
+  </form>
+</div>
 {% endblock %}

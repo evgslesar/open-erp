@@ -161,3 +161,29 @@ def test_sales_report_empty_when_no_sales_in_period(client):
     )
     assert response.status_code == 200
     assert "Нет данных" in response.text
+
+
+def test_export_with_unsupported_params_does_not_crash(client):
+    """Report handlers only accept their declared params; extra query
+    params like date_to on a balance report must be silently ignored."""
+    today = date.today().isoformat()
+    csv_resp = client.get(
+        f"/reports/stock_balance/export?fmt=csv&on_date={today}&date_to={today}"
+    )
+    assert csv_resp.status_code == 200
+    assert "text/csv" in csv_resp.headers["content-type"]
+
+    xlsx_resp = client.get(
+        f"/reports/stock_balance/export?fmt=xlsx&on_date={today}&date_to={today}"
+    )
+    assert xlsx_resp.status_code == 200
+    assert "spreadsheet" in xlsx_resp.headers["content-type"]
+
+
+def test_report_view_with_unsupported_params_does_not_crash(client):
+    today = date.today().isoformat()
+    response = client.get(
+        f"/reports/stock_balance?on_date={today}&date_to={today}&date_from={today}"
+    )
+    assert response.status_code == 200
+    assert "Widget" in response.text

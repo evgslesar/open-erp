@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import io
 from datetime import date
 from typing import Annotated
@@ -157,12 +158,40 @@ async def current_context(request: Request) -> RequestContext:
 CurrentContext = Annotated[RequestContext, Depends(current_context)]
 
 
+def _call_report_handler(handler, connection, registry, context, **params):
+    accepted = {
+        name
+        for name, param in inspect.signature(handler).parameters.items()
+        if param.kind
+        in (
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+    }
+    has_varkw = any(
+        param.kind == inspect.Parameter.VAR_KEYWORD
+        for param in inspect.signature(handler).parameters.values()
+    )
+    if has_varkw:
+        filtered = params
+    else:
+        filtered = {k: v for k, v in params.items() if k in accepted}
+    return handler(connection, registry, context, **filtered)
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     engine, registry = init_engine()
     app = FastAPI(title="Open ERP")
     app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax")
     app.state.engine = engine
+    app.state.registry = registry
+
+    templates.env.globals["catalogs"] = registry.catalogs()
+    templates.env.globals["documents"] = registry.documents()
+    templates.env.globals["reports"] = [
+        report for module in registry.modules.values() for report in module.reports
+    ]
     app.state.registry = registry
 
     @app.exception_handler(AuthenticationError)
@@ -592,7 +621,7 @@ def create_app() -> FastAPI:
         if date_to:
             params["date_to"] = date_to
         with transaction(engine) as connection:
-            rows = handler(connection, registry, context, **params)
+            rows = _call_report_handler(handler, connection, registry, context, **params)
         return templates.TemplateResponse(
             request,
             "reports/generic.html",
@@ -625,7 +654,7 @@ def create_app() -> FastAPI:
         if date_to:
             params["date_to"] = date_to
         with transaction(engine) as connection:
-            rows = handler(connection, registry, context, **params)
+            rows = _call_report_handler(handler, connection, registry, context, **params)
         buffer = io.BytesIO()
         if fmt == "xlsx":
             export_rows_xlsx(rows, buffer)

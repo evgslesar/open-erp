@@ -1,3 +1,5 @@
+{# Base layout with sidebar navigation #}
+{# Expects: context (RequestContext or None), and optional `active_section` #}
 <!doctype html>
 <html lang="ru">
 <head>
@@ -5,28 +7,116 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@2/css/pico.min.css">
-  <title>Открытая ERP</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { DEFAULT: '#1E40AF', light: '#3B82F6', dark: '#1E3A8A' },
+            accent: { DEFAULT: '#F59E0B', light: '#FBBF24' },
+            surface: { DEFAULT: '#F8FAFC', card: '#FFFFFF', border: '#E2E8F0' },
+          },
+          fontFamily: {
+            sans: ['Fira Sans', 'sans-serif'],
+            mono: ['Fira Code', 'monospace'],
+          },
+        }
+      }
+    }
+  </script>
+  <title>{% block title %}Open ERP{% endblock %}</title>
+  <style>
+    body { font-family: 'Fira Sans', sans-serif; }
+    .num { font-family: 'Fira Code', monospace; font-variant-numeric: tabular-nums; }
+    [x-cloak] { display: none !important; }
+  </style>
 </head>
-<body>
-  <main class="container">
-    <nav>
-      <ul>
-        <li><strong><a href="/">Открытая ERP</a></strong></li>
-      </ul>
-      <ul>
-        <li><a href="/reports/stock_balance">Остатки товаров</a></li>
-        {% if context %}
-          <li><span>{{ context.user_name or context.user_email }}</span></li>
-          <li>
-            <form method="post" action="/logout" style="margin:0;">
-              <button type="submit" class="secondary outline" style="padding:0.3rem 0.6rem;">Выйти</button>
-            </form>
-          </li>
+<body class="bg-surface text-slate-800 antialiased">
+  <div class="flex min-h-screen">
+
+    {# Sidebar #}
+    <aside class="w-64 bg-primary-dark text-white flex-shrink-0 hidden md:flex flex-col" x-data="{open: false}">
+      <div class="px-6 py-5 border-b border-white/10">
+        <a href="/" class="flex items-center gap-3">
+          <svg class="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+          </svg>
+          <span class="text-lg font-semibold tracking-tight">Open ERP</span>
+        </a>
+      </div>
+
+      <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto text-sm">
+        <a href="/" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors {{ 'bg-white/15 font-medium' if active_section == 'dashboard' }}">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"/></svg>
+          <span>Главная</span>
+        </a>
+
+        {# Catalogs group #}
+        {% if catalogs %}
+        <div class="pt-3 pb-1 px-3 text-xs uppercase tracking-wider text-white/40 font-medium">Справочники</div>
+        {% for catalog in catalogs %}
+        <a href="/catalogs/{{ catalog.name }}" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">
+          <svg class="w-4 h-4 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/></svg>
+          <span>{{ catalog.label }}</span>
+        </a>
+        {% endfor %}
         {% endif %}
-      </ul>
-    </nav>
-    {% block content %}{% endblock %}
-  </main>
+
+        {# Documents group #}
+        {% if documents %}
+        <div class="pt-3 pb-1 px-3 text-xs uppercase tracking-wider text-white/40 font-medium">Документы</div>
+        {% for document in documents %}
+        <a href="/documents/{{ document.name }}" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">
+          <svg class="w-4 h-4 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+          <span>{{ document.label }}</span>
+        </a>
+        {% endfor %}
+        {% endif %}
+
+        {# Reports group #}
+        {% if reports %}
+        <div class="pt-3 pb-1 px-3 text-xs uppercase tracking-wider text-white/40 font-medium">Отчёты</div>
+        {% for report in reports %}
+        <a href="/reports/{{ report.name }}" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">
+          <svg class="w-4 h-4 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625C9.75 8.004 10.254 7.5 10.875 7.5h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+          <span>{{ report.label }}</span>
+        </a>
+        {% endfor %}
+        {% endif %}
+      </nav>
+
+      {# User section #}
+      {% if context %}
+      <div class="px-4 py-3 border-t border-white/10">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-full bg-accent text-primary-dark flex items-center justify-center font-semibold text-sm shrink-0">
+            {{ (context.user_name or context.user_email or '?')[0] }}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium truncate">{{ context.user_name or context.user_email }}</div>
+          </div>
+          <form method="post" action="/logout">
+            <button type="submit" class="text-white/50 hover:text-white transition-colors" title="Выйти">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l3 3m0 0l-3 3m3-3H2.25"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endif %}
+    </aside>
+
+    {# Main content #}
+    <main class="flex-1 min-w-0 overflow-x-hidden">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  {# Mobile nav toggle could go here #}
 </body>
 </html>

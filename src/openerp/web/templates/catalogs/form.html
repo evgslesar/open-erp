@@ -1,26 +1,60 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>{{ catalog.label }}</h1>
+<div class="max-w-2xl space-y-4">
+  <div>
+    <nav class="text-xs text-slate-400 mb-1">
+      <a href="/" class="hover:text-primary">Главная</a>
+      <span class="mx-1">/</span>
+      <a href="/catalogs/{{ catalog.name }}" class="hover:text-primary">{{ catalog.label }}</a>
+    </nav>
+    <h1 class="text-xl font-semibold text-primary-dark">
+      {{ catalog.label }}: {{ item.name or 'новый элемент' }}
+    </h1>
+  </div>
 
-<form method="post" action="{{ action }}">
-  <label>
-    Наименование
-    <input name="name" value="{{ item.name or '' }}" required>
-  </label>
-
-  {% for field in catalog.fields %}
-    <label>
-      {{ field.label }}
-      <input
-        name="{{ field.name }}"
-        value="{{ item[field.name] if field.name in item else field.default or '' }}"
-        {% if field.required %}required{% endif %}
-      >
+  <form method="post" action="{{ action }}" class="bg-surface-card border border-surface-border rounded-xl p-6 space-y-4">
+    <label class="block">
+      <span class="text-sm font-medium text-slate-700">Наименование</span>
+      <input type="text" name="name" value="{{ item.name or '' }}" required
+             class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
     </label>
-  {% endfor %}
 
-  <button type="submit">Сохранить</button>
-  <a href="/catalogs/{{ catalog.name }}">Отмена</a>
-</form>
+    {% for field in catalog.fields %}
+    <label class="block">
+      <span class="text-sm font-medium text-slate-700">{{ field.label }}{% if field.required %} <span class="text-red-500">*</span>{% endif %}</span>
+      {% if field.type == 'text' %}
+        <textarea name="{{ field.name }}" rows="3"
+                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">{{ item.get(field.name) or '' }}</textarea>
+      {% elif field.type == 'integer' or field.type == 'money' %}
+        <input type="number" step="1" name="{{ field.name }}" value="{{ item.get(field.name) or '' }}"
+               class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+      {% elif field.type == 'decimal' %}
+        <input type="text" inputmode="decimal" name="{{ field.name }}" value="{{ item.get(field.name) or '' }}"
+               class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+      {% elif field.type == 'boolean' %}
+        <label class="inline-flex items-center gap-2 mt-1">
+          <input type="checkbox" name="{{ field.name }}" value="1" {{ 'checked' if item.get(field.name) else '' }}
+                 class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary">
+          <span class="text-sm text-slate-600">Да</span>
+        </label>
+      {% else %}
+        <input type="text" name="{{ field.name }}" value="{{ item.get(field.name) or '' }}"
+               class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+      {% endif %}
+    </label>
+    {% endfor %}
+
+    <div class="flex gap-2 pt-2">
+      <button type="submit"
+              class="px-5 py-2 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition-colors">
+        Сохранить
+      </button>
+      <a href="/catalogs/{{ catalog.name }}"
+         class="px-5 py-2 border border-surface-border text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+        Отмена
+      </a>
+    </div>
+  </form>
+</div>
 {% endblock %}

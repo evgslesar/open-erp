@@ -1,53 +1,85 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>{{ report.label }}</h1>
+<div class="space-y-4">
+  <div>
+    <nav class="text-xs text-slate-400 mb-1">
+      <a href="/" class="hover:text-primary">Главная</a>
+      <span class="mx-1">/</span>
+      <span>Отчёты</span>
+    </nav>
+    <h1 class="text-xl font-semibold text-primary-dark">{{ report.label }}</h1>
+  </div>
 
-<form method="get" action="/reports/{{ report.name }}" class="grid">
-  <label>
-    На дату
-    <input type="date" name="on_date" value="{{ on_date or '' }}">
-  </label>
-  <label>
-    С
-    <input type="date" name="date_from" value="{{ date_from or '' }}">
-  </label>
-  <label>
-    По
-    <input type="date" name="date_to" value="{{ date_to or '' }}">
-  </label>
-  <button type="submit">Применить</button>
-</form>
+  {# Filters + export #}
+  <div class="flex flex-wrap items-end gap-3">
+    <form method="get" action="/reports/{{ report.name }}" class="flex flex-wrap items-end gap-3">
+      <label class="block">
+        <span class="text-xs font-medium text-slate-500">На дату</span>
+        <input type="date" name="on_date" value="{{ on_date or '' }}"
+               class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+      </label>
+      <label class="block">
+        <span class="text-xs font-medium text-slate-500">С</span>
+        <input type="date" name="date_from" value="{{ date_from or '' }}"
+               class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+      </label>
+      <label class="block">
+        <span class="text-xs font-medium text-slate-500">По</span>
+        <input type="date" name="date_to" value="{{ date_to or '' }}"
+               class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+      </label>
+      <button type="submit"
+              class="px-4 py-1.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition-colors">
+        Применить
+      </button>
+    </form>
 
-<div style="margin: 1rem 0;">
-  <a href="/reports/{{ report.name }}/export?fmt=csv{% if on_date %}&on_date={{ on_date }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}"
-     role="button" class="secondary outline">CSV</a>
-  <a href="/reports/{{ report.name }}/export?fmt=xlsx{% if on_date %}&on_date={{ on_date }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}"
-     role="button" class="secondary outline">XLSX</a>
+    <div class="flex gap-2 ml-auto">
+      {% set export_params = [] %}
+      {% if on_date %}{% set _ = export_params.append('on_date=' ~ on_date) %}{% endif %}
+      {% if date_from %}{% set _ = export_params.append('date_from=' ~ date_from) %}{% endif %}
+      {% if date_to %}{% set _ = export_params.append('date_to=' ~ date_to) %}{% endif %}
+      {% set qs = export_params | join('&') %}
+      <a href="/reports/{{ report.name }}/export?fmt=csv{% if qs %}&{{ qs }}{% endif %}"
+         class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-surface-border rounded-lg hover:bg-slate-50 transition-colors text-slate-600">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+        CSV
+      </a>
+      <a href="/reports/{{ report.name }}/export?fmt=xlsx{% if qs %}&{{ qs }}{% endif %}"
+         class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-surface-border rounded-lg hover:bg-slate-50 transition-colors text-slate-600">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+        XLSX
+      </a>
+    </div>
+  </div>
+
+  {# Data table #}
+  <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-slate-50 border-b border-surface-border text-left">
+            {% if rows %}
+              {% for key in rows[0].keys() %}
+              <th class="px-4 py-3 font-medium text-slate-500">{{ key }}</th>
+              {% endfor %}
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-surface-border">
+          {% for row in rows %}
+          <tr class="hover:bg-slate-50 transition-colors">
+            {% for value in row.values() %}
+            <td class="px-4 py-2.5 text-slate-600 num">{{ value }}</td>
+            {% endfor %}
+          </tr>
+          {% else %}
+          <tr><td class="px-4 py-8 text-center text-slate-400">Нет данных за указанный период</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
-
-<table>
-  <thead>
-    <tr>
-      {% if rows %}
-        {% for key in rows[0].keys() %}
-          <th>{{ key }}</th>
-        {% endfor %}
-      {% endif %}
-    </tr>
-  </thead>
-  <tbody>
-    {% for row in rows %}
-      <tr>
-        {% for value in row.values() %}
-          <td>{{ value }}</td>
-        {% endfor %}
-      </tr>
-    {% endfor %}
-  </tbody>
-</table>
-
-{% if not rows %}
-  <p><em>Нет данных за указанный период.</em></p>
-{% endif %}
 {% endblock %}
