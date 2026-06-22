@@ -12,3 +12,5 @@ build/
 htmlcov/
 data/
 backups/
+.cursor/
+.opencode/
