@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ catalog.label }}</h1>
+
+<form method="post" action="{{ action }}">
+  <label>
+    Наименование
+    <input name="name" value="{{ item.name or '' }}" required>
+  </label>
+
+  {% for field in catalog.fields %}
+    <label>
+      {{ field.label }}
+      <input
+        name="{{ field.name }}"
+        value="{{ item[field.name] if field.name in item else field.default or '' }}"
+        {% if field.required %}required{% endif %}
+      >
+    </label>
+  {% endfor %}
+
+  <button type="submit">Сохранить</button>
+  <a href="/catalogs/{{ catalog.name }}">Отмена</a>
+</form>
+{% endblock %}

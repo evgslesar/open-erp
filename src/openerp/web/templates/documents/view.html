@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ document_def.label }} {{ document.number }}</h1>
+<p>Статус: <strong>{{ document.status }}</strong></p>
+<p>Дата: {{ document.date }}</p>
+<p><a href="/documents/{{ document_def.name }}/{{ document.id }}/print" target="_blank">Печатная форма</a></p>
+
+{% for part in document_def.table_parts %}
+  <h2>{{ part.label }}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        {% for field in part.fields %}
+          <th>{{ field.label }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in document[part.name] %}
+        <tr>
+          <td>{{ row.line_no }}</td>
+          {% for field in part.fields %}
+            <td>{{ row[field.name] }}</td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endfor %}
+{% endblock %}

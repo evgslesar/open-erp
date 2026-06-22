@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Остатки товаров</h1>
+<p>На дату: {{ on_date }}</p>
+<table>
+  <thead>
+    <tr>
+      <th>Склад</th>
+      <th>Номенклатура</th>
+      <th>Количество</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>{{ row.warehouse_id }}</td>
+        <td>{{ row.product_id }}</td>
+        <td>{{ row.quantity }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

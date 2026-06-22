@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-erp"
+version = "0.1.0"
+description = "Open-source trade, warehouse, and management accounting ERP MVP"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0-or-later" }
+authors = [
+  { name = "Open ERP contributors" }
+]
+dependencies = [
+  "fastapi>=0.115",
+  "jinja2>=3.1",
+  "openpyxl>=3.1",
+  "pydantic>=2.8",
+  "python-multipart>=0.0.9",
+  "sqlalchemy>=2.0",
+  "typer>=0.12",
+  "uvicorn>=0.30"
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27",
+  "pytest>=8.2",
+  "ruff>=0.5"
+]
+postgres = [
+  "psycopg[binary]>=3.2"
+]
+pdf = [
+  "weasyprint>=62"
+]
+
+[project.scripts]
+openerp = "openerp.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+openerp = ["web/templates/**/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

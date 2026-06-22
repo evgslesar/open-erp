@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>{{ document_name }} {{ document.number }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 32px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #999; padding: 6px; }
+  </style>
+</head>
+<body>
+  <h1>{{ document_name|title }} {{ document.number }}</h1>
+  <p>Дата: {{ document.date }}</p>
+  <p>Комментарий: {{ document.comment }}</p>
+
+  {% if document.lines %}
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Номенклатура</th>
+          <th>Количество</th>
+          <th>Цена</th>
+          <th>Сумма в копейках</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in document.lines %}
+          <tr>
+            <td>{{ row.line_no }}</td>
+            <td>{{ row.product_id }}</td>
+            <td>{{ row.quantity }}</td>
+            <td>{{ row.price }}</td>
+            <td>{{ row.amount_minor }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <script>
+    window.addEventListener("load", () => window.print());
+  </script>
+</body>
+</html>

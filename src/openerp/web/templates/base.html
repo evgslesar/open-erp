@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@2/css/pico.min.css">
+  <title>Открытая ERP</title>
+</head>
+<body>
+  <main class="container">
+    <nav>
+      <ul>
+        <li><strong><a href="/">Открытая ERP</a></strong></li>
+      </ul>
+      <ul>
+        <li><a href="/reports/stock-balance">Остатки товаров</a></li>
+      </ul>
+    </nav>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

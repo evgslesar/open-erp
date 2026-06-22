@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ catalog.label }}</h1>
+<p><a role="button" href="/catalogs/{{ catalog.name }}/new">Добавить</a></p>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Наименование</th>
+      {% for field in catalog.fields %}
+        <th>{{ field.label }}</th>
+      {% endfor %}
+      <th>Действия</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>{{ row.id }}</td>
+        <td>{{ row.name }}</td>
+        {% for field in catalog.fields %}
+          <td>{{ row[field.name] }}</td>
+        {% endfor %}
+        <td>
+          <a href="/catalogs/{{ catalog.name }}/{{ row.id }}/edit">Изменить</a>
+          <form method="post" action="/catalogs/{{ catalog.name }}/{{ row.id }}/delete" style="display:inline">
+            <button type="submit" class="secondary">Удалить</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

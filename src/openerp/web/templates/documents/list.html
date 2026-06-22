@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ document.label }}: журнал</h1>
+<table>
+  <thead>
+    <tr>
+      <th>Дата</th>
+      <th>Номер</th>
+      <th>Статус</th>
+      <th>Комментарий</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody id="document-rows">
+    {% for row in rows %}
+      <tr>
+        <td>{{ row.date }}</td>
+        <td>{{ row.number }}</td>
+        <td>{{ row.status }}</td>
+        <td>{{ row.comment }}</td>
+        <td><a href="/documents/{{ document.name }}/{{ row.id }}">Открыть</a></td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if next_cursor %}
+  <button
+    hx-get="/documents/{{ document.name }}?after_date={{ next_cursor.date }}&after_id={{ next_cursor.id }}"
+    hx-target="#document-rows"
+    hx-swap="beforeend">
+    Загрузить ещё
+  </button>
+{% endif %}
+{% endblock %}

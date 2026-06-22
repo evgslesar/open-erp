@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Открытая ERP: демо управленческого учёта</h1>
+<p>Торговля, склад, документы, остатки, печатные формы и расширения на Python.</p>
+
+<section>
+  <h2>Справочники</h2>
+  <div class="grid">
+    {% for catalog in catalogs %}
+      <article>
+        <h3>{{ catalog.label }}</h3>
+        <a href="/catalogs/{{ catalog.name }}">Открыть</a>
+      </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section>
+  <h2>Документы</h2>
+  <div class="grid">
+    {% for document in documents %}
+      <article>
+        <h3>{{ document.label }}</h3>
+        <a href="/documents/{{ document.name }}">Журнал</a>
+      </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section>
+  <h2>Отчёты</h2>
+  <ul>
+    <li><a href="/reports/stock-balance">Остатки товаров</a></li>
+  </ul>
+</section>
+{% endblock %}
