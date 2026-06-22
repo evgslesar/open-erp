@@ -2,7 +2,10 @@
 
 {% block content %}
 <h1>{{ catalog.label }}</h1>
-<p><a role="button" href="/catalogs/{{ catalog.name }}/new">Добавить</a></p>
+<div class="grid">
+  <a role="button" href="/catalogs/{{ catalog.name }}/new">Добавить</a>
+  <a role="button" class="secondary outline" href="/catalogs/{{ catalog.name }}/import">Импорт</a>
+</div>
 <table>
   <thead>
     <tr>

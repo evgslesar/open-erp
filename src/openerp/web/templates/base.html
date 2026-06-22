@@ -15,7 +15,15 @@
         <li><strong><a href="/">Открытая ERP</a></strong></li>
       </ul>
       <ul>
-        <li><a href="/reports/stock-balance">Остатки товаров</a></li>
+        <li><a href="/reports/stock_balance">Остатки товаров</a></li>
+        {% if context %}
+          <li><span>{{ context.user_name or context.user_email }}</span></li>
+          <li>
+            <form method="post" action="/logout" style="margin:0;">
+              <button type="submit" class="secondary outline" style="padding:0.3rem 0.6rem;">Выйти</button>
+            </form>
+          </li>
+        {% endif %}
       </ul>
     </nav>
     {% block content %}{% endblock %}

@@ -77,6 +77,8 @@ def system_tables(metadata: MetaData) -> None:
         Column("id", Integer, primary_key=True),
         Column("email", String(255), nullable=False, unique=True),
         Column("name", String(255), nullable=False),
+        Column("password_hash", String(255), nullable=True),
+        Column("default_organization_id", Integer, nullable=True),
         Column("is_active", Boolean, default=True, nullable=False),
         Column("created_at", DateTime, default=utcnow, nullable=False),
     )
@@ -240,6 +242,11 @@ def build_accumulation_register(metadata: MetaData, register: AccumulationRegist
         f"ix_{movement_name}_registrator",
         movements.c.registrator_type,
         movements.c.registrator_id,
+    )
+    Index(
+        f"ix_{movement_name}_org_period",
+        movements.c.organization_id,
+        movements.c.period,
     )
 
     totals_name = register_totals_table(register.name)

@@ -2,9 +2,31 @@
 
 {% block content %}
 <h1>{{ document_def.label }} {{ document.number }}</h1>
-<p>Статус: <strong>{{ document.status }}</strong></p>
+<p>Статус:
+  {% if document.status == 'posted' %}<strong>проведён</strong>
+  {% elif document.status == 'cancelled' %}<strong>отменён</strong>
+  {% else %}<strong>черновик</strong>{% endif %}
+</p>
 <p>Дата: {{ document.date }}</p>
-<p><a href="/documents/{{ document_def.name }}/{{ document.id }}/print" target="_blank">Печатная форма</a></p>
+{% if document.comment %}<p>{{ document.comment }}</p>{% endif %}
+
+<div class="grid">
+  {% if document.status == 'posted' %}
+    <form method="post" action="/documents/{{ document_def.name }}/{{ document.id }}/unpost">
+      <button type="submit" class="secondary outline">Отменить проведение</button>
+    </form>
+  {% else %}
+    <form method="post" action="/documents/{{ document_def.name }}/{{ document.id }}/post">
+      <button type="submit">Провести</button>
+    </form>
+    <a href="/documents/{{ document_def.name }}/{{ document.id }}/edit" role="button" class="secondary outline">Редактировать</a>
+    <form method="post" action="/documents/{{ document_def.name }}/{{ document.id }}/delete"
+          onsubmit="return confirm('Удалить документ?')">
+      <button type="submit" class="secondary outline" style="color: var(--pico-color-red-500);">Удалить</button>
+    </form>
+  {% endif %}
+  <a href="/documents/{{ document_def.name }}/{{ document.id }}/print" target="_blank" role="button" class="secondary outline">Печатная форма</a>
+</div>
 
 {% for part in document_def.table_parts %}
   <h2>{{ part.label }}</h2>

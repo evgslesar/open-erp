@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@2/css/pico.min.css">
+  <title>Вход — Открытая ERP</title>
+</head>
+<body>
+  <main class="container">
+    <article style="max-width: 420px; margin: 4rem auto;">
+      <header>
+        <h2>Открытая ERP</h2>
+        <p>Войдите, чтобы продолжить.</p>
+      </header>
+      {% if error %}
+        <small style="color: var(--pico-color-red-500);">{{ error }}</small>
+      {% endif %}
+      <form method="post" action="/login?next={{ next }}">
+        <label>
+          Email
+          <input type="email" name="email" required autofocus value="admin@example.local">
+        </label>
+        <label>
+          Пароль
+          <input type="password" name="password" required>
+        </label>
+        <button type="submit">Войти</button>
+      </form>
+    </article>
+  </main>
+</body>
+</html>

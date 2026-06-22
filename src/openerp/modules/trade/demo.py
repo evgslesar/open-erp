@@ -8,6 +8,10 @@ from sqlalchemy.engine import Connection
 from openerp.core.context import RequestContext
 from openerp.core.posting import DocumentPostingService
 from openerp.core.repository import Repository
+from openerp.core.security import hash_password
+
+DEMO_ADMIN_EMAIL = "admin@example.local"
+DEMO_ADMIN_PASSWORD = "admin"
 
 
 def ensure_admin_security(connection: Connection) -> None:
@@ -24,11 +28,27 @@ def ensure_admin_security(connection: Connection) -> None:
             organizations.insert().values(name='ООО "Демо Торг"')
         ).inserted_primary_key[0]
 
-    user_id = connection.execute(select(users.c.id).limit(1)).scalar_one_or_none()
+    user_id = connection.execute(
+        select(users.c.id).where(users.c.email == DEMO_ADMIN_EMAIL).limit(1)
+    ).scalar_one_or_none()
     if user_id is None:
         user_id = connection.execute(
-            users.insert().values(email="admin@example.local", name="Администратор")
+            users.insert().values(
+                email=DEMO_ADMIN_EMAIL,
+                name="Администратор",
+                password_hash=hash_password(DEMO_ADMIN_PASSWORD),
+                default_organization_id=org_id,
+            )
         ).inserted_primary_key[0]
+    else:
+        connection.execute(
+            users.update()
+            .where(users.c.email == DEMO_ADMIN_EMAIL)
+            .values(
+                password_hash=hash_password(DEMO_ADMIN_PASSWORD),
+                default_organization_id=org_id,
+            )
+        )
 
     role_id = connection.execute(
         select(roles.c.id).where(roles.c.name == "admin")
@@ -47,8 +67,16 @@ def ensure_admin_security(connection: Connection) -> None:
         "catalog:product",
         "catalog:warehouse",
         "catalog:currency",
+        "catalog:unit",
+        "catalog:cash_flow_category",
+        "catalog:price_type",
         "document:receipt",
         "document:sale",
+        "document:transfer",
+        "document:inventory_adjustment",
+        "document:order",
+        "document:cash_payment",
+        "document:bank_payment",
         "system:closed_period",
     ]
     for object_name in object_names:

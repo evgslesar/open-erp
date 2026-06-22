@@ -23,6 +23,8 @@
       <article>
         <h3>{{ document.label }}</h3>
         <a href="/documents/{{ document.name }}">Журнал</a>
+        <br>
+        <a href="/documents/{{ document.name }}/new">+ Создать</a>
       </article>
     {% endfor %}
   </div>
@@ -31,7 +33,9 @@
 <section>
   <h2>Отчёты</h2>
   <ul>
-    <li><a href="/reports/stock-balance">Остатки товаров</a></li>
+    {% for report in reports %}
+      <li><a href="/reports/{{ report.name }}">{{ report.label }}</a></li>
+    {% endfor %}
   </ul>
 </section>
 {% endblock %}

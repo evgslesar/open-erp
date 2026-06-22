@@ -1,17 +1,30 @@
 from __future__ import annotations
 
+import io
 from datetime import date
+from typing import Annotated
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 
 from openerp.bootstrap import init_engine
+from openerp.config import get_settings
 from openerp.core.context import RequestContext
-from openerp.core.metadata import CatalogDef, FieldDef, FieldType
-from openerp.core.repository import Repository
+from openerp.core.import_export import (
+    catalog_template_rows,
+    export_rows_csv,
+    export_rows_xlsx,
+    import_catalog_rows,
+    read_csv_rows,
+    read_xlsx_rows,
+)
+from openerp.core.metadata import CatalogDef, DocumentDef, FieldDef, FieldType
+from openerp.core.posting import DocumentPostingService
+from openerp.core.repository import DocumentStateError, Repository
+from openerp.core.security import AuthenticationError, authenticate, load_user_context
 from openerp.db import transaction
-from openerp.modules.trade.reports import stock_balance_report
 
 templates = Jinja2Templates(directory="src/openerp/web/templates")
 
@@ -37,17 +50,139 @@ def normalize_catalog_form(catalog: CatalogDef, form: dict[str, str]) -> dict:
     return values
 
 
+def coerce_field(field: FieldDef, raw: str | None) -> any:
+    if raw is None or raw == "":
+        return None
+    if field.type in (FieldType.INTEGER, FieldType.MONEY):
+        return int(raw)
+    if field.type == FieldType.DECIMAL:
+        return str(raw)
+    if field.type == FieldType.DATE:
+        return date.fromisoformat(raw)
+    if field.type == FieldType.BOOLEAN:
+        return raw in ("1", "true", "on")
+    return raw
+
+
+def parse_document_form(
+    document_def: DocumentDef,
+    form: dict[str, str],
+) -> tuple[dict, dict[str, list[dict]]]:
+    header: dict = {}
+    table_parts: dict[str, list[dict]] = {part.name: [] for part in document_def.table_parts}
+
+    for key, value in form.items():
+        segments = key.split(".")
+        if len(segments) == 3 and segments[0] in table_parts:
+            part_name, index_str, field_name = segments
+            try:
+                index = int(index_str)
+            except ValueError:
+                continue
+            bucket = table_parts[part_name]
+            while len(bucket) <= index:
+                bucket.append({})
+            bucket[index][field_name] = value
+        else:
+            header[key] = value
+
+    normalized_header: dict = {}
+    for field in document_def.fields:
+        coerced = coerce_field(field, header.get(field.name))
+        if coerced is not None:
+            normalized_header[field.name] = coerced
+    if header.get("date"):
+        normalized_header["date"] = date.fromisoformat(header["date"])
+    if header.get("number"):
+        normalized_header["number"] = header["number"]
+    if header.get("comment"):
+        normalized_header["comment"] = header["comment"]
+
+    for part in document_def.table_parts:
+        cleaned: list[dict] = []
+        for row in table_parts[part.name]:
+            if not any(row.values()):
+                continue
+            normalized: dict = {}
+            for field in part.fields:
+                coerced = coerce_field(field, row.get(field.name))
+                if coerced is not None:
+                    normalized[field.name] = coerced
+            if normalized:
+                cleaned.append(normalized)
+        table_parts[part.name] = cleaned
+
+    return normalized_header, table_parts
+
+
+def reference_options(repository: Repository, registry, field_name: str) -> list[dict] | None:
+    if not field_name.endswith("_id"):
+        return None
+    catalog_name = field_name[:-3]
+    if catalog_name not in {catalog.name for catalog in registry.catalogs()}:
+        return None
+    try:
+        return repository.list_catalog_items(catalog_name)
+    except Exception:
+        return None
+
+
+def _collect_reference_options(
+    repository: Repository,
+    registry,
+    document_def: DocumentDef,
+) -> dict[str, list[dict]]:
+    field_names = {field.name for field in document_def.fields if field.name.endswith("_id")}
+    for part in document_def.table_parts:
+        field_names.update(
+            field.name for field in part.fields if field.name.endswith("_id")
+        )
+    options: dict[str, list[dict]] = {}
+    for field_name in field_names:
+        items = reference_options(repository, registry, field_name)
+        if items is not None:
+            options[field_name] = items
+    return options
+
+
+async def current_context(request: Request) -> RequestContext:
+    user_id = request.session.get("user_id")
+    if user_id is None:
+        raise AuthenticationError("Not authenticated")
+    engine = request.app.state.engine
+    with transaction(engine) as connection:
+        return load_user_context(connection, int(user_id))
+
+
+CurrentContext = Annotated[RequestContext, Depends(current_context)]
+
+
 def create_app() -> FastAPI:
+    settings = get_settings()
     engine, registry = init_engine()
     app = FastAPI(title="Open ERP")
+    app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax")
     app.state.engine = engine
     app.state.registry = registry
 
-    def context() -> RequestContext:
-        return RequestContext(user_id=1, organization_id=1, is_admin=True)
+    @app.exception_handler(AuthenticationError)
+    async def on_auth_error(request: Request, _exc: AuthenticationError):
+        next_path = request.url.path
+        if request.url.query:
+            next_path = f"{next_path}?{request.url.query}"
+        return RedirectResponse(f"/login?next={next_path}", status_code=303)
+
+    @app.exception_handler(DocumentStateError)
+    async def on_document_state_error(request: Request, exc: DocumentStateError):
+        return templates.TemplateResponse(
+            request,
+            "error.html",
+            {"message": str(exc), "context": None},
+            status_code=409,
+        )
 
     @app.get("/", response_class=HTMLResponse)
-    def index(request: Request):
+    def index(request: Request, context: CurrentContext):
         reports = [
             report
             for module in registry.modules.values()
@@ -60,45 +195,99 @@ def create_app() -> FastAPI:
                 "catalogs": registry.catalogs(),
                 "documents": registry.documents(),
                 "reports": reports,
+                "context": context,
             },
         )
 
+    @app.get("/login", response_class=HTMLResponse)
+    def login_form(request: Request, next: str = "/"):
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"next": next, "error": None},
+        )
+
+    @app.post("/login")
+    async def login(request: Request, next: str = "/"):
+        form = dict(await request.form())
+        email = form.get("email", "").strip()
+        password = form.get("password", "")
+        try:
+            with transaction(engine) as connection:
+                user = authenticate(connection, email, password)
+        except AuthenticationError:
+            return templates.TemplateResponse(
+                request,
+                "login.html",
+                {"next": next, "error": "Неверный email или пароль"},
+                status_code=401,
+            )
+        request.session["user_id"] = user["id"]
+        return RedirectResponse(next or "/", status_code=303)
+
+    @app.post("/logout")
+    def logout(request: Request):
+        request.session.clear()
+        return RedirectResponse("/login", status_code=303)
+
     @app.get("/catalogs/{catalog_name}", response_class=HTMLResponse)
-    def catalog_list(request: Request, catalog_name: str):
+    def catalog_list(
+        request: Request,
+        catalog_name: str,
+        context: CurrentContext,
+    ):
         with transaction(engine) as connection:
-            repository = Repository(connection, registry, context())
+            repository = Repository(connection, registry, context)
             rows = repository.list_catalog_items(catalog_name)
         catalog = catalog_by_name(registry, catalog_name)
         return templates.TemplateResponse(
             request,
             "catalogs/list.html",
-            {"catalog": catalog, "rows": rows},
+            {"catalog": catalog, "rows": rows, "context": context},
         )
 
     @app.get("/catalogs/{catalog_name}/new", response_class=HTMLResponse)
-    def catalog_new(request: Request, catalog_name: str):
+    def catalog_new(
+        request: Request,
+        catalog_name: str,
+        context: CurrentContext,
+    ):
         catalog = catalog_by_name(registry, catalog_name)
         return templates.TemplateResponse(
             request,
             "catalogs/form.html",
-            {"catalog": catalog, "item": {}, "action": f"/catalogs/{catalog_name}/new"},
+            {
+                "catalog": catalog,
+                "item": {},
+                "action": f"/catalogs/{catalog_name}/new",
+                "context": context,
+            },
         )
 
     @app.post("/catalogs/{catalog_name}/new")
-    async def catalog_create(request: Request, catalog_name: str):
+    async def catalog_create(
+        request: Request,
+        catalog_name: str,
+        context: CurrentContext,
+    ):
         catalog = catalog_by_name(registry, catalog_name)
         form = dict(await request.form())
         values = normalize_catalog_form(catalog, form)
         with transaction(engine) as connection:
-            repository = Repository(connection, registry, context())
+            repository = Repository(connection, registry, context)
             repository.create_catalog_item(catalog_name, values)
         return RedirectResponse(f"/catalogs/{catalog_name}", status_code=303)
 
     @app.get("/catalogs/{catalog_name}/{item_id}/edit", response_class=HTMLResponse)
-    def catalog_edit(request: Request, catalog_name: str, item_id: int):
+    def catalog_edit(
+        request: Request,
+        catalog_name: str,
+        item_id: int,
+        context: CurrentContext,
+    ):
         catalog = catalog_by_name(registry, catalog_name)
         with transaction(engine) as connection:
-            repository = Repository(connection, registry, context())
+            repository = Repository(connection, registry, context)
             item = repository.get_catalog_item(catalog_name, item_id)
         return templates.TemplateResponse(
             request,
@@ -107,35 +296,112 @@ def create_app() -> FastAPI:
                 "catalog": catalog,
                 "item": item,
                 "action": f"/catalogs/{catalog_name}/{item_id}/edit",
+                "context": context,
             },
         )
 
     @app.post("/catalogs/{catalog_name}/{item_id}/edit")
-    async def catalog_update(request: Request, catalog_name: str, item_id: int):
+    async def catalog_update(
+        request: Request,
+        catalog_name: str,
+        item_id: int,
+        context: CurrentContext,
+    ):
         catalog = catalog_by_name(registry, catalog_name)
         form = dict(await request.form())
         values = normalize_catalog_form(catalog, form)
         with transaction(engine) as connection:
-            repository = Repository(connection, registry, context())
+            repository = Repository(connection, registry, context)
             repository.update_catalog_item(catalog_name, item_id, values)
         return RedirectResponse(f"/catalogs/{catalog_name}", status_code=303)
 
     @app.post("/catalogs/{catalog_name}/{item_id}/delete")
-    def catalog_delete(catalog_name: str, item_id: int):
+    def catalog_delete(
+        catalog_name: str,
+        item_id: int,
+        context: CurrentContext,
+    ):
         with transaction(engine) as connection:
-            repository = Repository(connection, registry, context())
+            repository = Repository(connection, registry, context)
             repository.delete_catalog_item(catalog_name, item_id)
         return RedirectResponse(f"/catalogs/{catalog_name}", status_code=303)
+
+    @app.get("/catalogs/{catalog_name}/import", response_class=HTMLResponse)
+    def catalog_import_form(
+        request: Request,
+        catalog_name: str,
+        context: CurrentContext,
+    ):
+        catalog = catalog_by_name(registry, catalog_name)
+        return templates.TemplateResponse(
+            request,
+            "catalogs/import.html",
+            {"catalog": catalog, "result": None, "context": context},
+        )
+
+    @app.post("/catalogs/{catalog_name}/import")
+    async def catalog_import(
+        request: Request,
+        catalog_name: str,
+        context: CurrentContext,
+    ):
+        catalog = catalog_by_name(registry, catalog_name)
+        form = await request.form()
+        upload = form.get("file")
+        dry_run = form.get("dry_run") == "1"
+        if upload is None or not hasattr(upload, "read"):
+            return templates.TemplateResponse(
+                request,
+                "catalogs/import.html",
+                {
+                    "catalog": catalog,
+                    "result": {"errors": [{"row": 0, "error": "No file selected"}]},
+                    "context": context,
+                },
+                status_code=400,
+            )
+        content = await upload.read()
+        filename = getattr(upload, "filename", "") or ""
+        if filename.endswith(".xlsx"):
+            rows = read_xlsx_rows(content)
+        else:
+            rows = read_csv_rows(content)
+        with transaction(engine) as connection:
+            result = import_catalog_rows(
+                connection, registry, context, catalog_name, rows, dry_run=dry_run
+            )
+        return templates.TemplateResponse(
+            request,
+            "catalogs/import.html",
+            {"catalog": catalog, "result": result, "context": context},
+        )
+
+    @app.get("/catalogs/{catalog_name}/import-template")
+    def catalog_import_template(
+        catalog_name: str,
+        context: CurrentContext,
+    ):
+        rows = catalog_template_rows(registry, catalog_name)
+        buffer = io.BytesIO()
+        export_rows_csv(rows, buffer)
+        return Response(
+            content=buffer.getvalue(),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{catalog_name}_template.csv"'
+            },
+        )
 
     @app.get("/documents/{document_name}", response_class=HTMLResponse)
     def document_list(
         request: Request,
         document_name: str,
+        context: CurrentContext,
         after_date: date | None = None,
         after_id: int | None = None,
     ):
         with transaction(engine) as connection:
-            repository = Repository(connection, registry, context())
+            repository = Repository(connection, registry, context)
             rows = repository.list_documents_keyset(
                 document_name,
                 after_date=after_date,
@@ -146,13 +412,140 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             request,
             "documents/list.html",
-            {"document": document, "rows": rows, "next_cursor": next_cursor},
+            {"document": document, "rows": rows, "next_cursor": next_cursor, "context": context},
+        )
+
+    @app.get("/documents/{document_name}/new", response_class=HTMLResponse)
+    def document_new(
+        request: Request,
+        document_name: str,
+        context: CurrentContext,
+    ):
+        document_def = registry.document(document_name)
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            references = _collect_reference_options(repository, registry, document_def)
+        return templates.TemplateResponse(
+            request,
+            "documents/form.html",
+            {
+                "document_def": document_def,
+                "document": {},
+                "action": f"/documents/{document_name}/new",
+                "references": references,
+                "context": context,
+            },
+        )
+
+    @app.post("/documents/{document_name}/new")
+    async def document_create(
+        request: Request,
+        document_name: str,
+        context: CurrentContext,
+    ):
+        document_def = registry.document(document_name)
+        form = dict(await request.form())
+        values, table_parts = parse_document_form(document_def, form)
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            document_id = repository.create_document(document_name, values, table_parts)
+        return RedirectResponse(
+            f"/documents/{document_name}/{document_id}", status_code=303
+        )
+
+    @app.get("/documents/{document_name}/{document_id}/edit", response_class=HTMLResponse)
+    def document_edit(
+        request: Request,
+        document_name: str,
+        document_id: int,
+        context: CurrentContext,
+    ):
+        document_def = registry.document(document_name)
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            document = repository.get_document(document_name, document_id)
+            references = _collect_reference_options(repository, registry, document_def)
+        return templates.TemplateResponse(
+            request,
+            "documents/form.html",
+            {
+                "document_def": document_def,
+                "document": document,
+                "action": f"/documents/{document_name}/{document_id}/edit",
+                "references": references,
+                "context": context,
+            },
+        )
+
+    @app.post("/documents/{document_name}/{document_id}/edit")
+    async def document_update(
+        request: Request,
+        document_name: str,
+        document_id: int,
+        context: CurrentContext,
+    ):
+        document_def = registry.document(document_name)
+        form = dict(await request.form())
+        values, table_parts = parse_document_form(document_def, form)
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            repository.update_document(document_name, document_id, values, table_parts)
+        return RedirectResponse(
+            f"/documents/{document_name}/{document_id}", status_code=303
+        )
+
+    @app.post("/documents/{document_name}/{document_id}/delete")
+    def document_delete(
+        document_name: str,
+        document_id: int,
+        context: CurrentContext,
+    ):
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            repository.delete_document(document_name, document_id)
+        return RedirectResponse(f"/documents/{document_name}", status_code=303)
+
+    @app.post("/documents/{document_name}/{document_id}/post")
+    def document_post(
+        document_name: str,
+        document_id: int,
+        context: CurrentContext,
+    ):
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            repository.get_document(document_name, document_id)
+            DocumentPostingService(connection, registry, context).post(
+                document_name, document_id
+            )
+        return RedirectResponse(
+            f"/documents/{document_name}/{document_id}", status_code=303
+        )
+
+    @app.post("/documents/{document_name}/{document_id}/unpost")
+    def document_unpost(
+        document_name: str,
+        document_id: int,
+        context: CurrentContext,
+    ):
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            repository.get_document(document_name, document_id)
+            DocumentPostingService(connection, registry, context).unpost(
+                document_name, document_id
+            )
+        return RedirectResponse(
+            f"/documents/{document_name}/{document_id}", status_code=303
         )
 
     @app.get("/documents/{document_name}/{document_id}", response_class=HTMLResponse)
-    def document_view(request: Request, document_name: str, document_id: int):
+    def document_view(
+        request: Request,
+        document_name: str,
+        document_id: int,
+        context: CurrentContext,
+    ):
         with transaction(engine) as connection:
-            repository = Repository(connection, registry, context())
+            repository = Repository(connection, registry, context)
             document = repository.get_document(document_name, document_id)
         return templates.TemplateResponse(
             request,
@@ -160,28 +553,91 @@ def create_app() -> FastAPI:
             {
                 "document_def": registry.document(document_name),
                 "document": document,
+                "context": context,
             },
         )
 
     @app.get("/documents/{document_name}/{document_id}/print", response_class=HTMLResponse)
-    def document_print(request: Request, document_name: str, document_id: int):
+    def document_print(
+        request: Request,
+        document_name: str,
+        document_id: int,
+        context: CurrentContext,
+    ):
         with transaction(engine) as connection:
-            repository = Repository(connection, registry, context())
+            repository = Repository(connection, registry, context)
             document = repository.get_document(document_name, document_id)
         return templates.TemplateResponse(
             request,
             "documents/print_form.html",
-            {"document_name": document_name, "document": document},
+            {"document_name": document_name, "document": document, "context": context},
         )
 
-    @app.get("/reports/stock-balance", response_class=HTMLResponse)
-    def report_stock_balance(request: Request, on_date: date | None = None):
+    @app.get("/reports/{report_name}", response_class=HTMLResponse)
+    def report_view(
+        request: Request,
+        report_name: str,
+        context: CurrentContext,
+        on_date: date | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ):
+        report_def = registry.report(report_name)
+        handler = registry.report_handlers[report_def.handler]
+        params: dict = {}
+        if on_date:
+            params["on_date"] = on_date
+        if date_from:
+            params["date_from"] = date_from
+        if date_to:
+            params["date_to"] = date_to
         with transaction(engine) as connection:
-            rows = stock_balance_report(connection, registry, context(), on_date or date.today())
+            rows = handler(connection, registry, context, **params)
         return templates.TemplateResponse(
             request,
-            "reports/stock_balance.html",
-            {"rows": rows, "on_date": on_date or date.today()},
+            "reports/generic.html",
+            {
+                "report": report_def,
+                "rows": rows,
+                "on_date": on_date or date.today(),
+                "date_from": date_from,
+                "date_to": date_to or date.today(),
+                "context": context,
+            },
+        )
+
+    @app.get("/reports/{report_name}/export")
+    def report_export(
+        report_name: str,
+        context: CurrentContext,
+        fmt: str = "csv",
+        on_date: date | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ):
+        report_def = registry.report(report_name)
+        handler = registry.report_handlers[report_def.handler]
+        params: dict = {}
+        if on_date:
+            params["on_date"] = on_date
+        if date_from:
+            params["date_from"] = date_from
+        if date_to:
+            params["date_to"] = date_to
+        with transaction(engine) as connection:
+            rows = handler(connection, registry, context, **params)
+        buffer = io.BytesIO()
+        if fmt == "xlsx":
+            export_rows_xlsx(rows, buffer)
+            media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        else:
+            export_rows_csv(rows, buffer)
+            media = "text/csv"
+        filename = f"{report_name}.{fmt}"
+        return Response(
+            content=buffer.getvalue(),
+            media_type=media,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     return app

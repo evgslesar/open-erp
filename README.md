@@ -24,13 +24,36 @@ python -m venv .venv
 .\.venv\Scripts\openerp run
 ```
 
-Open http://127.0.0.1:8000.
+Open http://127.0.0.1:8000 and log in with `admin@example.local` / `admin`.
+
+## CLI commands
+
+| Command | Description |
+|---|---|
+| `init-db` | Create database schema |
+| `seed-demo` | Load demo trade data |
+| `run --port 8000` | Start web server |
+| `backup` | Backup SQLite database |
+| `set-password <email> <password>` | Change user password |
+| `export-stock <file> [--fmt csv\|xlsx]` | Export stock balance report |
+| `import-catalog <catalog> <file> [--fmt csv\|xlsx] [--dry-run]` | Import catalog items |
+| `import-initial-stock <file> [--dry-run]` | Import initial stock via inventory adjustment |
+| `catalog-template <catalog> <file>` | Download CSV import template |
+| `rebuild-totals <register>` | Rebuild register totals from movements |
+| `verify-totals <register>` | Check totals consistency |
 
 ## Architecture
 
 The system is built around metadata, documents, registers, and idempotent posting. Application objects are described in trusted Python modules. The platform uses those definitions to create tables, render basic UI, enforce permissions, and expose register APIs for reports.
 
-The database layer is SQLAlchemy Core in synchronous transactions. SQLite is the zero-dependency default; PostgreSQL is supported by keeping application code database-neutral.
+The database layer is SQLAlchemy Core in synchronous transactions. SQLite is the zero-dependency default; PostgreSQL is supported by keeping application code database-neutral. CI runs on both.
+
+### Key design decisions
+
+- **Register totals** store monthly turnover. Balance on date = sum of all prior months' totals + current month's movements. Totals are maintained incrementally on every posting.
+- **Posting** is idempotent: re-posting deletes old movements then re-creates them. Unposting removes movements. Closed periods block changes.
+- **Authentication** uses bcrypt password hashes with signed cookie sessions.
+- **Forms** are generated from metadata. Table parts support dynamic line addition via Alpine.js.
 
 ## License
 

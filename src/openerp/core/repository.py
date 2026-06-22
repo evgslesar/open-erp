@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from sqlalchemy import and_, desc, insert, select, update
+from sqlalchemy import and_, delete, desc, insert, select, update
 from sqlalchemy.engine import Connection
 
 from openerp.core.audit import log_audit, log_operation
@@ -12,6 +12,10 @@ from openerp.core.metadata import DocumentStatus, MetadataRegistry
 from openerp.core.naming import catalog_table, document_table, table_part_table
 from openerp.core.schema import utcnow
 from openerp.core.security import require_permission
+
+
+class DocumentStateError(RuntimeError):
+    """Raised when a document operation is blocked by the document's status."""
 
 
 class Repository:
@@ -283,3 +287,91 @@ class Repository:
             .limit(limit)
         )
         return [dict(row._mapping) for row in self.connection.execute(query)]
+
+    def update_document(
+        self,
+        document_name: str,
+        document_id: int,
+        values: dict[str, Any],
+        table_parts: dict[str, list[dict[str, Any]]] | None = None,
+    ) -> None:
+        require_permission(self.connection, self.context, f"document:{document_name}", "update")
+        document_def = self.registry.document(document_name)
+        table = self.metadata.tables[document_table(document_name)]
+        before = self.get_document(document_name, document_id)
+        if str(before["status"]) == DocumentStatus.POSTED.value:
+            raise DocumentStateError(
+                f"Document {document_name}/{document_id} is posted; unpost before editing"
+            )
+        payload = {
+            **values,
+            "updated_by": self.context.user_id,
+            "updated_at": utcnow(),
+            "revision": before["revision"] + 1,
+        }
+        self.connection.execute(
+            update(table)
+            .where(
+                and_(
+                    table.c.id == document_id,
+                    table.c.organization_id == self.context.organization_id,
+                )
+            )
+            .values(**payload)
+        )
+
+        for part in document_def.table_parts:
+            part_table = self.metadata.tables[table_part_table(document_name, part.name)]
+            self.connection.execute(
+                delete(part_table).where(part_table.c.document_id == document_id)
+            )
+            for line_no, row in enumerate((table_parts or {}).get(part.name, []), start=1):
+                self.connection.execute(
+                    part_table.insert().values(
+                        document_id=document_id, line_no=line_no, **row
+                    )
+                )
+
+        log_audit(
+            self.connection,
+            self.context,
+            f"document:{document_name}",
+            "update",
+            document_id,
+            before=before,
+            after={**before, **payload},
+        )
+
+    def delete_document(self, document_name: str, document_id: int) -> None:
+        require_permission(self.connection, self.context, f"document:{document_name}", "delete")
+        table = self.metadata.tables[document_table(document_name)]
+        before = self.get_document(document_name, document_id)
+        if str(before["status"]) == DocumentStatus.POSTED.value:
+            raise DocumentStateError(
+                f"Document {document_name}/{document_id} is posted; unpost before deleting"
+            )
+        payload = {
+            "deletion_mark": True,
+            "updated_by": self.context.user_id,
+            "updated_at": utcnow(),
+            "revision": before["revision"] + 1,
+        }
+        self.connection.execute(
+            update(table)
+            .where(
+                and_(
+                    table.c.id == document_id,
+                    table.c.organization_id == self.context.organization_id,
+                )
+            )
+            .values(**payload)
+        )
+        log_audit(
+            self.connection,
+            self.context,
+            f"document:{document_name}",
+            "delete",
+            document_id,
+            before=before,
+            after={**before, **payload},
+        )

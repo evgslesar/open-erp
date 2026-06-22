@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>{{ document.label }}: журнал</h1>
+<div class="grid">
+  <h1>{{ document.label }}: журнал</h1>
+  <div>
+    <a href="/documents/{{ document.name }}/new" role="button">+ Создать</a>
+  </div>
+</div>
 <table>
   <thead>
     <tr>
@@ -17,7 +22,11 @@
       <tr>
         <td>{{ row.date }}</td>
         <td>{{ row.number }}</td>
-        <td>{{ row.status }}</td>
+        <td>
+          {% if row.status == 'posted' %}<small>проведён</small>
+          {% elif row.status == 'cancelled' %}<small>отменён</small>
+          {% else %}<small>черновик</small>{% endif %}
+        </td>
         <td>{{ row.comment }}</td>
         <td><a href="/documents/{{ document.name }}/{{ row.id }}">Открыть</a></td>
       </tr>

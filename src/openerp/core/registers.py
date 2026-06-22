@@ -33,15 +33,25 @@ class RegisterService:
     def delete_registrator_movements(self, registrator_type: str, registrator_id: int) -> None:
         for register in self.registry.accumulation_registers():
             table = self.metadata.tables[register_movements_table(register.name)]
-            self.connection.execute(
-                delete(table).where(
-                    and_(
-                        table.c.registrator_type == registrator_type,
-                        table.c.registrator_id == registrator_id,
-                        table.c.organization_id == self.context.organization_id,
-                    )
-                )
+            conditions = and_(
+                table.c.registrator_type == registrator_type,
+                table.c.registrator_id == registrator_id,
+                table.c.organization_id == self.context.organization_id,
             )
+            existing_rows = [
+                dict(row._mapping)
+                for row in self.connection.execute(select(table).where(conditions))
+            ]
+            for row in existing_rows:
+                dimensions = {
+                    dimension.name: row[dimension.name] for dimension in register.dimensions
+                }
+                resources = {
+                    resource.name: -to_decimal(row[resource.name])
+                    for resource in register.resources
+                }
+                self._apply_movement_delta(register.name, row["period"], dimensions, resources)
+            self.connection.execute(delete(table).where(conditions))
 
     def add_movement(
         self,
@@ -64,9 +74,55 @@ class RegisterService:
             "created_at": utcnow(),
             **dimensions,
         }
+        resource_values: dict[str, Decimal] = {}
         for resource in register.resources:
-            payload[resource.name] = decimal_to_db(resources.get(resource.name, Decimal("0")))
+            value = to_decimal(resources.get(resource.name, Decimal("0")))
+            resource_values[resource.name] = value
+            payload[resource.name] = decimal_to_db(value)
         self.connection.execute(table.insert().values(**payload))
+        self._apply_movement_delta(register_name, period, dimensions, resource_values)
+
+    def _apply_movement_delta(
+        self,
+        register_name: str,
+        period: date,
+        dimensions: dict[str, Any],
+        resource_deltas: dict[str, Decimal],
+    ) -> None:
+        register = self.registry.accumulation_register(register_name)
+        totals = self.metadata.tables[register_totals_table(register_name)]
+        period_start = month_start(period)
+        conditions = [
+            totals.c.period_start == period_start,
+            totals.c.organization_id == self.context.organization_id,
+        ]
+        for key, value in dimensions.items():
+            conditions.append(totals.c[key] == value)
+        existing = self.connection.execute(select(totals).where(and_(*conditions))).first()
+        if existing is None:
+            payload: dict[str, Any] = {
+                "period_start": period_start,
+                "organization_id": self.context.organization_id,
+                "updated_at": utcnow(),
+            }
+            payload.update(dimensions)
+            for resource in register.resources:
+                payload[resource.name] = decimal_to_db(
+                    resource_deltas.get(resource.name, Decimal("0"))
+                )
+            self.connection.execute(totals.insert().values(**payload))
+            return
+        new_values: dict[str, Any] = {"updated_at": utcnow()}
+        resulting: dict[str, Decimal] = {}
+        for resource in register.resources:
+            delta = resource_deltas.get(resource.name, Decimal("0"))
+            current = to_decimal(existing._mapping[resource.name])
+            resulting[resource.name] = current + delta
+            new_values[resource.name] = decimal_to_db(resulting[resource.name])
+        if all(value == 0 for value in resulting.values()):
+            self.connection.execute(delete(totals).where(and_(*conditions)))
+            return
+        self.connection.execute(totals.update().where(and_(*conditions)).values(**new_values))
 
     def balance(
         self,
@@ -85,11 +141,15 @@ class RegisterService:
             lambda: {resource.name: Decimal("0") for resource in register.resources}
         )
 
-        total_conditions = [totals.c.organization_id == self.context.organization_id]
-        total_conditions.append(totals.c.period_start == period_start)
-        move_conditions = [movements.c.organization_id == self.context.organization_id]
-        move_conditions.append(movements.c.period >= period_start)
-        move_conditions.append(movements.c.period <= on_date)
+        total_conditions = [
+            totals.c.organization_id == self.context.organization_id,
+            totals.c.period_start < period_start,
+        ]
+        move_conditions = [
+            movements.c.organization_id == self.context.organization_id,
+            movements.c.period >= period_start,
+            movements.c.period <= on_date,
+        ]
         for key, value in filters.items():
             total_conditions.append(totals.c[key] == value)
             move_conditions.append(movements.c[key] == value)
@@ -106,12 +166,7 @@ class RegisterService:
             for resource in register.resources:
                 grouped[key][resource.name] += to_decimal(mapping[resource.name])
 
-        result = []
-        for key, resources in grouped.items():
-            row = {dimension: key[index] for index, dimension in enumerate(dimensions)}
-            row.update({name: value for name, value in resources.items()})
-            result.append(row)
-        return result
+        return self._build_balance_rows(dimensions, grouped)
 
     def turnover(
         self,
@@ -154,6 +209,7 @@ class RegisterService:
         on_date: date,
         filters: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
+        register = self.registry.information_register(register_name)
         table = self.metadata.tables[information_register_table(register_name)]
         conditions = [
             table.c.organization_id == self.context.organization_id,
@@ -161,14 +217,77 @@ class RegisterService:
         ]
         for key, value in (filters or {}).items():
             conditions.append(table.c[key] == value)
+        dimension_columns = [table.c[dim.name] for dim in register.dimensions]
         latest = (
             select(func.max(table.c.id).label("id"))
             .where(and_(*conditions))
-            .group_by(*(table.c[key] for key in (filters or {}).keys()))
+            .group_by(*dimension_columns)
             .subquery()
         )
         query = select(table).join(latest, table.c.id == latest.c.id)
         return [dict(row._mapping) for row in self.connection.execute(query)]
+
+    def movements(
+        self,
+        register_name: str,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        table = self.metadata.tables[register_movements_table(register_name)]
+        conditions = [table.c.organization_id == self.context.organization_id]
+        if start_date is not None:
+            conditions.append(table.c.period >= start_date)
+        if end_date is not None:
+            conditions.append(table.c.period <= end_date)
+        for key, value in (filters or {}).items():
+            conditions.append(table.c[key] == value)
+        query = select(table).where(and_(*conditions)).order_by(table.c.period, table.c.id)
+        return [dict(row._mapping) for row in self.connection.execute(query)]
+
+    def balance_and_turnover(
+        self,
+        register_name: str,
+        start_date: date,
+        end_date: date,
+        dimensions: list[str] | None = None,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        register = self.registry.accumulation_register(register_name)
+        dimensions = dimensions or [item.name for item in register.dimensions]
+        filters = filters or {}
+        opening = self.balance(register_name, start_date, dimensions=dimensions, filters=filters)
+        turnover_rows = self.turnover(
+            register_name, start_date, end_date, dimensions=dimensions, filters=filters
+        )
+        opening_map: dict[tuple[Any, ...], dict[str, Decimal]] = {
+            tuple(row[dim] for dim in dimensions): {
+                res.name: to_decimal(row[res.name]) for res in register.resources
+            }
+            for row in opening
+        }
+        turnover_map: dict[tuple[Any, ...], dict[str, Decimal]] = {
+            tuple(row[dim] for dim in dimensions): {
+                res.name: to_decimal(row[res.name]) for res in register.resources
+            }
+            for row in turnover_rows
+        }
+        keys = set(opening_map) | set(turnover_map)
+        result: list[dict[str, Any]] = []
+        for key in keys:
+            open_resources = opening_map.get(
+                key, {res.name: Decimal("0") for res in register.resources}
+            )
+            turn_resources = turnover_map.get(
+                key, {res.name: Decimal("0") for res in register.resources}
+            )
+            row = {dim: key[idx] for idx, dim in enumerate(dimensions)}
+            for res in register.resources:
+                row[f"{res.name}_open"] = open_resources[res.name]
+                row[f"{res.name}_turnover"] = turn_resources[res.name]
+                row[f"{res.name}_close"] = open_resources[res.name] + turn_resources[res.name]
+            result.append(row)
+        return result
 
     def rebuild_totals(self, register_name: str) -> None:
         register = self.registry.accumulation_register(register_name)
@@ -179,23 +298,15 @@ class RegisterService:
         grouped: dict[tuple[Any, ...], dict[str, Decimal]] = defaultdict(
             lambda: {resource.name: Decimal("0") for resource in register.resources}
         )
-        raw_rows = [dict(row._mapping) for row in self.connection.execute(select(movements))]
-        period_starts = sorted({month_start(row["period"]) for row in raw_rows})
-
-        for period_start in period_starts:
-            period_rows = [row for row in raw_rows if row["period"] < period_start]
-            period_grouped: dict[tuple[Any, ...], dict[str, Decimal]] = defaultdict(
-                lambda: {resource.name: Decimal("0") for resource in register.resources}
+        for row in self.connection.execute(select(movements)):
+            mapping = dict(row._mapping)
+            key = (
+                month_start(mapping["period"]),
+                mapping["organization_id"],
+                *(mapping[dimension.name] for dimension in register.dimensions),
             )
-            for mapping in period_rows:
-                key = (
-                    period_start,
-                    mapping["organization_id"],
-                    *(mapping[dimension.name] for dimension in register.dimensions),
-                )
-                for resource in register.resources:
-                    period_grouped[key][resource.name] += to_decimal(mapping[resource.name])
-            grouped.update(period_grouped)
+            for resource in register.resources:
+                grouped[key][resource.name] += to_decimal(mapping[resource.name])
 
         for key, resources in grouped.items():
             payload = {
@@ -217,3 +328,72 @@ class RegisterService:
             for resource in register.resources:
                 if row[resource.name] < 0:
                     raise ValueError(f"Negative balance in register {register_name}: {row}")
+
+    def verify_totals(self, register_name: str) -> list[dict[str, Any]]:
+        register = self.registry.accumulation_register(register_name)
+        movements = self.metadata.tables[register_movements_table(register_name)]
+        totals = self.metadata.tables[register_totals_table(register_name)]
+
+        expected: dict[tuple[Any, ...], dict[str, Decimal]] = defaultdict(
+            lambda: {resource.name: Decimal("0") for resource in register.resources}
+        )
+        for row in self.connection.execute(select(movements)):
+            mapping = dict(row._mapping)
+            key = (
+                month_start(mapping["period"]),
+                mapping["organization_id"],
+                *(mapping[dimension.name] for dimension in register.dimensions),
+            )
+            for resource in register.resources:
+                expected[key][resource.name] += to_decimal(mapping[resource.name])
+
+        actual: dict[tuple[Any, ...], dict[str, Decimal]] = {}
+        for row in self.connection.execute(select(totals)):
+            mapping = dict(row._mapping)
+            key = (
+                mapping["period_start"],
+                mapping["organization_id"],
+                *(mapping[dimension.name] for dimension in register.dimensions),
+            )
+            actual[key] = {
+                resource.name: to_decimal(mapping[resource.name]) for resource in register.resources
+            }
+
+        discrepancies: list[dict[str, Any]] = []
+        for key, expected_resources in expected.items():
+            period_start, organization_id, *dimension_values = key
+            actual_resources = actual.get(key, {})
+            for resource in register.resources:
+                if to_decimal(expected_resources[resource.name]) != to_decimal(
+                    actual_resources.get(resource.name, Decimal("0"))
+                ):
+                    discrepancies.append(
+                        {
+                            "period_start": period_start,
+                            "organization_id": organization_id,
+                            "dimensions": {
+                                dim: value
+                                for dim, value in zip(
+                                    [d.name for d in register.dimensions],
+                                    dimension_values,
+                                    strict=False,
+                                )
+                            },
+                            "resource": resource.name,
+                            "expected": expected_resources[resource.name],
+                            "actual": actual_resources.get(resource.name, Decimal("0")),
+                        }
+                    )
+        return discrepancies
+
+    def _build_balance_rows(
+        self,
+        dimensions: list[str],
+        grouped: dict[tuple[Any, ...], dict[str, Decimal]],
+    ) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        for key, resources in grouped.items():
+            row = {dimension: key[index] for index, dimension in enumerate(dimensions)}
+            row.update({name: value for name, value in resources.items()})
+            result.append(row)
+        return result

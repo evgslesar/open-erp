@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>
+  {{ document_def.label }}
+  {% if document.id %}№ {{ document.number }}{% else %}: новый{% endif %}
+</h1>
+
+<form method="post" action="{{ action }}">
+  <fieldset>
+    <legend>Шапка документа</legend>
+    <label>
+      Дата
+      <input type="date" name="date" value="{{ document.date or '' }}" required>
+    </label>
+    {% if document.id %}
+      <label>
+        Номер
+        <input type="text" name="number" value="{{ document.number }}" readonly>
+      </label>
+    {% endif %}
+    {% for field in document_def.fields %}
+      <label>
+        {{ field.label }}
+        {% if references and references.get(field.name) is not none %}
+          <select name="{{ field.name }}">
+            <option value="">— выбрать —</option>
+            {% for item in references[field.name] %}
+              <option value="{{ item.id }}"
+                {% if document.get(field.name) == item.id %}selected{% endif %}>
+                {{ item.name }}
+              </option>
+            {% endfor %}
+          </select>
+        {% elif field.type == 'text' %}
+          <textarea name="{{ field.name }}">{{ document.get(field.name) or '' }}</textarea>
+        {% elif field.type == 'integer' or field.type == 'money' %}
+          <input type="number" step="1" name="{{ field.name }}"
+            value="{{ document.get(field.name) or '' }}">
+        {% elif field.type == 'decimal' %}
+          <input type="text" inputmode="decimal" name="{{ field.name }}"
+            value="{{ document.get(field.name) or '' }}">
+        {% elif field.type == 'date' %}
+          <input type="date" name="{{ field.name }}"
+            value="{{ document.get(field.name) or '' }}">
+        {% elif field.type == 'boolean' %}
+          <input type="checkbox" name="{{ field.name }}" value="1"
+            {% if document.get(field.name) %}checked{% endif %}>
+        {% else %}
+          <input type="text" name="{{ field.name }}"
+            value="{{ document.get(field.name) or '' }}"
+            {% if field.default %}placeholder="{{ field.default }}"{% endif %}>
+        {% endif %}
+      </label>
+    {% endfor %}
+    <label>
+      Комментарий
+      <textarea name="comment">{{ document.get('comment') or '' }}</textarea>
+    </label>
+  </fieldset>
+
+  {% for part in document_def.table_parts %}
+    {% set part_rows = document.get(part.name) or [] %}
+    <section x-data="{ rows: {{ part_rows | tojson | safe }} }">
+      <h2>{{ part.label }}</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            {% for field in part.fields %}<th>{{ field.label }}</th>{% endfor %}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(row, idx) in rows" :key="idx">
+            <tr>
+              <td x-text="idx + 1"></td>
+              {% for field in part.fields %}
+                <td>
+                  {% set field_name = field.name %}
+                  {% set ref_key = field_name %}
+                  {% if references and references.get(ref_key) is not none %}
+                    <select :name="`${part.name}.${idx}.{{ field_name }}`"
+                            x-model="row.{{ field_name }}">
+                      <option value="">—</option>
+                      {% for item in references[ref_key] %}
+                        <option value="{{ item.id }}">{{ item.name }}</option>
+                      {% endfor %}
+                    </select>
+                  {% elif field.type == 'integer' or field.type == 'money' %}
+                    <input type="number" step="1"
+                           :name="`${part.name}.${idx}.{{ field_name }}`"
+                           x-model="row.{{ field_name }}">
+                  {% elif field.type == 'decimal' %}
+                    <input type="text" inputmode="decimal"
+                           :name="`${part.name}.${idx}.{{ field_name }}`"
+                           x-model="row.{{ field_name }}">
+                  {% elif field.type == 'boolean' %}
+                    <input type="checkbox" value="1"
+                           :name="`${part.name}.${idx}.{{ field_name }}`"
+                           x-model="row.{{ field_name }}">
+                  {% else %}
+                    <input type="text"
+                           :name="`${part.name}.${idx}.{{ field_name }}`"
+                           x-model="row.{{ field_name }}">
+                  {% endif %}
+                </td>
+              {% endfor %}
+              <td>
+                <button type="button" class="secondary outline"
+                        @click="rows.splice(idx, 1)" title="Удалить строку">✕</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <button type="button" class="secondary"
+              @click="rows.push({})">+ Добавить строку</button>
+    </section>
+  {% endfor %}
+
+  <div class="grid">
+    <button type="submit">Сохранить</button>
+    <a href="/documents/{{ document_def.name }}" role="button" class="secondary outline">Отмена</a>
+  </div>
+</form>
+{% endblock %}

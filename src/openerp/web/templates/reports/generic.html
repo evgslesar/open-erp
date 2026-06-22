@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ report.label }}</h1>
+
+<form method="get" action="/reports/{{ report.name }}" class="grid">
+  <label>
+    На дату
+    <input type="date" name="on_date" value="{{ on_date or '' }}">
+  </label>
+  <label>
+    С
+    <input type="date" name="date_from" value="{{ date_from or '' }}">
+  </label>
+  <label>
+    По
+    <input type="date" name="date_to" value="{{ date_to or '' }}">
+  </label>
+  <button type="submit">Применить</button>
+</form>
+
+<div style="margin: 1rem 0;">
+  <a href="/reports/{{ report.name }}/export?fmt=csv{% if on_date %}&on_date={{ on_date }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}"
+     role="button" class="secondary outline">CSV</a>
+  <a href="/reports/{{ report.name }}/export?fmt=xlsx{% if on_date %}&on_date={{ on_date }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}"
+     role="button" class="secondary outline">XLSX</a>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      {% if rows %}
+        {% for key in rows[0].keys() %}
+          <th>{{ key }}</th>
+        {% endfor %}
+      {% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+      <tr>
+        {% for value in row.values() %}
+          <td>{{ value }}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if not rows %}
+  <p><em>Нет данных за указанный период.</em></p>
+{% endif %}
+{% endblock %}

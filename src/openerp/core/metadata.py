@@ -157,3 +157,18 @@ class MetadataRegistry:
             if register.name == name:
                 return register
         raise KeyError(name)
+
+    def information_register(self, name: str) -> InformationRegisterDef:
+        for register in self.information_registers():
+            if register.name == name:
+                return register
+        raise KeyError(name)
+
+    def reports(self) -> list[ReportDef]:
+        return [report for module in self.modules.values() for report in module.reports]
+
+    def report(self, name: str) -> ReportDef:
+        for report in self.reports():
+            if report.name == name:
+                return report
+        raise KeyError(name)

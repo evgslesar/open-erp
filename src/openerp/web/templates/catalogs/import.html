@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Импорт: {{ catalog.label }}</h1>
+
+<div style="margin: 1rem 0;">
+  <a href="/catalogs/{{ catalog.name }}/import-template" role="button" class="secondary outline">
+    Скачать шаблон CSV
+  </a>
+</div>
+
+<form method="post" action="/catalogs/{{ catalog.name }}/import" enctype="multipart/form-data">
+  <label>
+    Файл (CSV или XLSX)
+    <input type="file" name="file" accept=".csv,.xlsx" required>
+  </label>
+  <label>
+    <input type="checkbox" name="dry_run" value="1">
+    Только проверка (без записи)
+  </label>
+  <button type="submit">Импортировать</button>
+  <a href="/catalogs/{{ catalog.name }}" role="button" class="secondary outline">Отмена</a>
+</form>
+
+{% if result %}
+  <hr>
+  {% if result.errors %}
+    <h3>Ошибки ({{ result.errors | length }})</h3>
+    <table>
+      <thead><tr><th>Строка</th><th>Ошибка</th></tr></thead>
+      <tbody>
+        {% for error in result.errors %}
+          <tr><td>{{ error.row }}</td><td>{{ error.error }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p><strong>Успешно импортировано: {{ result.imported }} строк</strong></p>
+  {% endif %}
+{% endif %}
+{% endblock %}
