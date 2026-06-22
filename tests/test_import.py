@@ -154,6 +154,51 @@ def test_import_initial_stock_creates_and_posts_document(engine_and_registry):
     assert int(balance[0]["quantity"]) == 50
 
 
+def test_import_initial_stock_uses_warehouse_not_product_id(engine_and_registry):
+    engine, registry = engine_and_registry
+    context = RequestContext(user_id=1, organization_id=1, is_admin=True)
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        product_id = repository.create_catalog_item(
+            "product", {"name": "Widget", "sku": "W1", "unit": "pcs"}
+        )
+        repository.create_catalog_item("warehouse", {"name": "Other"})
+        warehouse_id = repository.create_catalog_item("warehouse", {"name": "Main"})
+        assert warehouse_id != product_id
+
+    rows = [{"product_sku": "W1", "warehouse_name": "Main", "quantity": "12"}]
+    with transaction(engine) as connection:
+        result = import_initial_stock_rows(connection, registry, context, rows)
+        document = Repository(connection, registry, context).get_document(
+            "inventory_adjustment", result["document_id"]
+        )
+
+    assert result["imported"] == 1
+    assert document["warehouse_id"] == warehouse_id
+
+
+def test_import_initial_stock_groups_by_warehouse(engine_and_registry):
+    engine, registry = engine_and_registry
+    context = RequestContext(user_id=1, organization_id=1, is_admin=True)
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        repository.create_catalog_item("warehouse", {"name": "Main"})
+        repository.create_catalog_item("warehouse", {"name": "Store"})
+        repository.create_catalog_item(
+            "product", {"name": "Widget", "sku": "W1", "unit": "pcs"}
+        )
+
+    rows = [
+        {"product_sku": "W1", "warehouse_name": "Main", "quantity": "10"},
+        {"product_sku": "W1", "warehouse_name": "Store", "quantity": "5"},
+    ]
+    with transaction(engine) as connection:
+        result = import_initial_stock_rows(connection, registry, context, rows)
+
+    assert result["imported"] == 2
+    assert len(result["document_ids"]) == 2
+
+
 def test_import_initial_stock_unknown_sku_reports_error(engine_and_registry):
     engine, registry = engine_and_registry
     context = RequestContext(user_id=1, organization_id=1, is_admin=True)

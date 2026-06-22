@@ -4,7 +4,12 @@ from datetime import date, timedelta
 
 import pytest
 
-from openerp.core.posting import ClosedPeriodError, DocumentPostingService, InsufficientStockError, set_closed_period
+from openerp.core.posting import (
+    ClosedPeriodError,
+    DocumentPostingService,
+    InsufficientStockError,
+    set_closed_period,
+)
 from openerp.core.registers import RegisterService
 from openerp.core.repository import DocumentStateError, Repository
 from openerp.db import transaction
@@ -410,3 +415,64 @@ def test_verify_totals_detects_and_resolves_divergence(app_state, context):
 
         registers.rebuild_totals("stock")
         assert registers.verify_totals("stock") == []
+
+
+def test_closed_period_blocks_document_create(app_state, context):
+    engine, registry = app_state
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        currency_id, warehouse_id, counterparty_id, product_id = create_master_data(repository)
+        set_closed_period(connection, context, date.today() + timedelta(days=1))
+        with pytest.raises(ClosedPeriodError):
+            create_document(
+                repository,
+                "receipt",
+                warehouse_id,
+                counterparty_id,
+                product_id,
+                currency_id,
+                5,
+            )
+
+
+def test_closed_period_blocks_document_update(app_state, context):
+    engine, registry = app_state
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        currency_id, warehouse_id, counterparty_id, product_id = create_master_data(repository)
+        receipt_id = create_document(
+            repository,
+            "receipt",
+            warehouse_id,
+            counterparty_id,
+            product_id,
+            currency_id,
+            5,
+        )
+        set_closed_period(connection, context, date.today() + timedelta(days=1))
+        with pytest.raises(ClosedPeriodError):
+            repository.update_document(
+                "receipt",
+                receipt_id,
+                {"comment": "blocked"},
+                {"lines": []},
+            )
+
+
+def test_unpost_draft_raises_document_state_error(app_state, context):
+    engine, registry = app_state
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        currency_id, warehouse_id, counterparty_id, product_id = create_master_data(repository)
+        receipt_id = create_document(
+            repository,
+            "receipt",
+            warehouse_id,
+            counterparty_id,
+            product_id,
+            currency_id,
+            5,
+        )
+        poster = DocumentPostingService(connection, registry, context)
+        with pytest.raises(DocumentStateError):
+            poster.unpost("receipt", receipt_id)

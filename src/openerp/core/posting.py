@@ -9,7 +9,7 @@ from sqlalchemy.engine import Connection
 from openerp.core.audit import log_operation
 from openerp.core.context import RequestContext
 from openerp.core.metadata import DocumentStatus, MetadataRegistry
-from openerp.core.repository import DocumentStateError, Repository
+from openerp.core.repository import Repository
 from openerp.core.security import PermissionDenied, require_permission
 
 
@@ -86,6 +86,8 @@ class DocumentPostingService:
         )
 
     def unpost(self, document_name: str, document_id: int) -> None:
+        from openerp.core.repository import DocumentStateError
+
         require_permission(self.connection, self.context, f"document:{document_name}", "unpost")
         document = self.repository.get_document(document_name, document_id)
         if str(document["status"]) != DocumentStatus.POSTED.value:

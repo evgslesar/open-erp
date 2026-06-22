@@ -20,7 +20,7 @@ from openerp.modules.trade.demo import (
     DEMO_ADMIN_PASSWORD,
     ensure_admin_security,
 )
-from openerp.web.app import create_app
+from openerp.web.app import create_app, safe_redirect_path
 
 
 @pytest.fixture()
@@ -140,3 +140,20 @@ def test_report_only_visible_after_login(app_client):
     assert seeded.status_code == 200
     rows = re.findall(r"<tr>\s*<td>\d+</td>\s*<td>\d+</td>\s*<td>\d+</td>", seeded.text)
     assert len(rows) == 0, "fixture only seeds admin user, no trade documents yet"
+
+
+def test_safe_redirect_path_blocks_external_urls():
+    assert safe_redirect_path("/documents/receipt") == "/documents/receipt"
+    assert safe_redirect_path("https://evil.com") == "/"
+    assert safe_redirect_path("//evil.com") == "/"
+    assert safe_redirect_path(None) == "/"
+
+
+def test_login_rejects_external_redirect(app_client):
+    response = app_client.post(
+        "/login?next=https://evil.com",
+        data={"email": DEMO_ADMIN_EMAIL, "password": DEMO_ADMIN_PASSWORD},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"

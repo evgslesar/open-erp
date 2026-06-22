@@ -24,7 +24,12 @@ from openerp.core.import_export import (
 from openerp.core.metadata import CatalogDef, DocumentDef, FieldDef, FieldType
 from openerp.core.posting import ClosedPeriodError, DocumentPostingService, InsufficientStockError
 from openerp.core.repository import DocumentStateError, Repository
-from openerp.core.security import AuthenticationError, PermissionDenied, authenticate, load_user_context
+from openerp.core.security import (
+    AuthenticationError,
+    PermissionDenied,
+    authenticate,
+    load_user_context,
+)
 from openerp.db import transaction
 
 templates = Jinja2Templates(directory="src/openerp/web/templates")

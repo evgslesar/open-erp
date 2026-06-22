@@ -186,3 +186,33 @@ def test_posting_sale_without_stock_returns_business_error(client):
     assert response.status_code == 409
     assert "Internal Server Error" not in response.text
     assert "Negative balance" in response.text or "Операция невозможна" in response.text
+
+
+def test_order_document_has_no_post_button(client):
+    test_client, master = client
+    create = test_client.post(
+        "/documents/order/new",
+        data={
+            "date": date.today().isoformat(),
+            "counterparty_id": str(master["counterparty_id"]),
+            "warehouse_id": str(master["warehouse_id"]),
+            "lines.0.product_id": str(master["product_id"]),
+            "lines.0.quantity": "1",
+            "lines.0.price": "100.00",
+            "lines.0.amount_minor": "10000",
+            "lines.0.currency_id": str(master["currency_id"]),
+        },
+        follow_redirects=False,
+    )
+    document_url = create.headers["location"]
+    view = test_client.get(document_url)
+    assert view.status_code == 200
+    assert "Провести" not in view.text
+
+
+def test_transfer_form_shows_warehouse_dropdowns(client):
+    test_client, _ = client
+    form_page = test_client.get("/documents/transfer/new")
+    assert form_page.status_code == 200
+    assert form_page.text.count("<select") >= 2
+    assert "Main" in form_page.text

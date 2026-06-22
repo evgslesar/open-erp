@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import csv
 import io
-from collections.abc import Iterable
 from collections import defaultdict
+from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
 from typing import IO, Any
