@@ -11,6 +11,7 @@ from openerp.core.context import RequestContext
 from openerp.core.metadata import DocumentStatus, MetadataRegistry
 from openerp.core.naming import catalog_table, document_table, table_part_table
 from openerp.core.schema import utcnow
+from openerp.core.posting import ensure_period_open
 from openerp.core.security import require_permission
 
 
@@ -191,6 +192,7 @@ class Repository:
             "updated_by": self.context.user_id,
         }
         payload.setdefault("date", date.today())
+        ensure_period_open(self.connection, self.context, payload["date"])
         result = self.connection.execute(insert(table).values(**payload))
         document_id = int(result.inserted_primary_key[0])
 
@@ -303,6 +305,10 @@ class Repository:
             raise DocumentStateError(
                 f"Document {document_name}/{document_id} is posted; unpost before editing"
             )
+        ensure_period_open(self.connection, self.context, before["date"])
+        new_date = values.get("date", before["date"])
+        if new_date != before["date"]:
+            ensure_period_open(self.connection, self.context, new_date)
         payload = {
             **values,
             "updated_by": self.context.user_id,
@@ -350,6 +356,7 @@ class Repository:
             raise DocumentStateError(
                 f"Document {document_name}/{document_id} is posted; unpost before deleting"
             )
+        ensure_period_open(self.connection, self.context, before["date"])
         payload = {
             "deletion_mark": True,
             "updated_by": self.context.user_id,

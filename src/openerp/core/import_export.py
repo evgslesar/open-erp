@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 from collections.abc import Iterable
+from collections import defaultdict
 from datetime import date
 from pathlib import Path
 from typing import IO, Any
@@ -130,10 +131,14 @@ def import_initial_stock_rows(
 
     Expected columns: product_sku, warehouse_name, quantity.
     """
-    product_map = _catalog_lookup_by_key(connection, "product", "sku")
-    warehouse_map = _catalog_lookup_by_key(connection, "warehouse", "name")
+    product_map = _catalog_lookup_by_key(
+        connection, "product", "sku", context.organization_id
+    )
+    warehouse_map = _catalog_lookup_by_key(
+        connection, "warehouse", "name", context.organization_id
+    )
     errors: list[dict[str, Any]] = []
-    lines: list[dict[str, Any]] = []
+    lines_by_warehouse: dict[int, list[dict[str, Any]]] = defaultdict(list)
 
     for index, row in enumerate(rows, start=2):
         sku = (row.get("product_sku") or "").strip()
@@ -157,30 +162,42 @@ def import_initial_stock_rows(
         except (TypeError, ValueError):
             errors.append({"row": index, "error": f"Invalid quantity: {qty_raw}"})
             continue
-        lines.append({"product_id": product_id, "quantity_delta": quantity})
+        lines_by_warehouse[warehouse_id].append(
+            {"product_id": product_id, "quantity_delta": quantity}
+        )
 
-    if errors or dry_run or not lines:
-        return {"imported": 0, "errors": errors, "document_id": None}
+    if errors or dry_run or not lines_by_warehouse:
+        return {"imported": 0, "errors": errors, "document_id": None, "document_ids": []}
 
     repository = Repository(connection, registry, context)
     from openerp.core.posting import DocumentPostingService
 
-    document_id = repository.create_document(
-        "inventory_adjustment",
-        {"date": date.today(), "warehouse_id": lines[0]["product_id"]},
-        {"lines": lines},
-    )
-    DocumentPostingService(connection, registry, context).post(
-        "inventory_adjustment", document_id
-    )
+    poster = DocumentPostingService(connection, registry, context)
+    document_ids: list[int] = []
+    imported_count = 0
+    for warehouse_id, warehouse_lines in lines_by_warehouse.items():
+        document_id = repository.create_document(
+            "inventory_adjustment",
+            {"date": date.today(), "warehouse_id": warehouse_id},
+            {"lines": warehouse_lines},
+        )
+        poster.post("inventory_adjustment", document_id)
+        document_ids.append(document_id)
+        imported_count += len(warehouse_lines)
+
     log_operation(
         connection,
         context,
         "import_initial_stock",
         object_type="document:inventory_adjustment",
-        details={"document_id": document_id, "line_count": len(lines)},
+        details={"document_ids": document_ids, "line_count": imported_count},
     )
-    return {"imported": len(lines), "errors": errors, "document_id": document_id}
+    return {
+        "imported": imported_count,
+        "errors": errors,
+        "document_id": document_ids[0] if len(document_ids) == 1 else None,
+        "document_ids": document_ids,
+    }
 
 
 def catalog_template_rows(registry: MetadataRegistry, catalog_name: str) -> list[dict[str, str]]:
@@ -201,12 +218,20 @@ def _find_catalog(registry: MetadataRegistry, catalog_name: str) -> CatalogDef:
 
 
 def _catalog_lookup_by_key(
-    connection: Connection, catalog_name: str, key_field: str
+    connection: Connection,
+    catalog_name: str,
+    key_field: str,
+    organization_id: int,
 ) -> dict[str, int]:
     from openerp.core.naming import catalog_table
 
     table = connection.engine._openerp_metadata.tables[catalog_table(catalog_name)]
-    rows = connection.execute(select(table.c.id, getattr(table.c, key_field)))
+    rows = connection.execute(
+        select(table.c.id, getattr(table.c, key_field)).where(
+            table.c.organization_id == organization_id,
+            table.c.deletion_mark.is_(False),
+        )
+    )
     return {row._mapping[key_field]: row._mapping["id"] for row in rows if row._mapping[key_field]}
 
 

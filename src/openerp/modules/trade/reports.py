@@ -17,9 +17,15 @@ from openerp.core.registers import RegisterService
 def _catalog_name_map(
     connection: Connection,
     catalog_name: str,
+    organization_id: int,
 ) -> dict[int, str]:
     table = connection.engine._openerp_metadata.tables[catalog_table(catalog_name)]
-    rows = connection.execute(select(table.c.id, table.c.name))
+    rows = connection.execute(
+        select(table.c.id, table.c.name).where(
+            table.c.organization_id == organization_id,
+            table.c.deletion_mark.is_(False),
+        )
+    )
     return {row._mapping["id"]: row._mapping["name"] for row in rows}
 
 
@@ -31,8 +37,8 @@ def stock_balance_report(
 ) -> list[dict]:
     service = RegisterService(connection, registry, context)
     rows = service.balance("stock", on_date or date.today())
-    products = _catalog_name_map(connection, "product")
-    warehouses = _catalog_name_map(connection, "warehouse")
+    products = _catalog_name_map(connection, "product", context.organization_id)
+    warehouses = _catalog_name_map(connection, "warehouse", context.organization_id)
     for row in rows:
         row["product_name"] = products.get(row.get("product_id"), row.get("product_id"))
         row["warehouse_name"] = warehouses.get(row.get("warehouse_id"), row.get("warehouse_id"))
@@ -62,7 +68,7 @@ def sales_report(
         bucket["quantity"] += to_decimal(move["quantity"])
         bucket["amount_minor"] += _line_amount(connection, move)
 
-    products = _catalog_name_map(connection, "product")
+    products = _catalog_name_map(connection, "product", context.organization_id)
     result: list[dict[str, Any]] = []
     for product_id, totals in sorted(grouped.items()):
         result.append(
@@ -98,7 +104,7 @@ def settlements_report(
 ) -> list[dict]:
     service = RegisterService(connection, registry, context)
     rows = service.balance("settlements", on_date or date.today())
-    counterparties = _catalog_name_map(connection, "counterparty")
+    counterparties = _catalog_name_map(connection, "counterparty", context.organization_id)
     for row in rows:
         row["counterparty_name"] = counterparties.get(
             row.get("counterparty_id"), row.get("counterparty_id")

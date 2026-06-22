@@ -9,11 +9,15 @@ from sqlalchemy.engine import Connection
 from openerp.core.audit import log_operation
 from openerp.core.context import RequestContext
 from openerp.core.metadata import DocumentStatus, MetadataRegistry
-from openerp.core.repository import Repository
+from openerp.core.repository import DocumentStateError, Repository
 from openerp.core.security import PermissionDenied, require_permission
 
 
 class ClosedPeriodError(RuntimeError):
+    pass
+
+
+class InsufficientStockError(RuntimeError):
     pass
 
 
@@ -70,7 +74,10 @@ class DocumentPostingService:
 
         for register in self.registry.accumulation_registers():
             if not register.allow_negative:
-                registers.assert_no_negative_balances(register.name, document["date"])
+                try:
+                    registers.assert_no_negative_balances(register.name, document["date"])
+                except ValueError as error:
+                    raise InsufficientStockError(str(error)) from error
 
         self.repository.update_document_status(
             document_name,
@@ -81,6 +88,10 @@ class DocumentPostingService:
     def unpost(self, document_name: str, document_id: int) -> None:
         require_permission(self.connection, self.context, f"document:{document_name}", "unpost")
         document = self.repository.get_document(document_name, document_id)
+        if str(document["status"]) != DocumentStatus.POSTED.value:
+            raise DocumentStateError(
+                f"Document {document_name}/{document_id} is not posted; cannot unpost"
+            )
         self._ensure_period_open(document["date"])
 
         from openerp.core.registers import RegisterService
@@ -100,17 +111,23 @@ class DocumentPostingService:
         )
 
     def _ensure_period_open(self, document_date: date) -> None:
-        table = self.connection.engine._openerp_metadata.tables["sys_closed_periods"]
-        row = self.connection.execute(
-            select(table.c.closed_until).where(
-                table.c.organization_id == self.context.organization_id
-            )
-        ).first()
-        if row is None:
-            return
-        closed_until = row._mapping["closed_until"]
-        if document_date <= closed_until:
-            raise ClosedPeriodError(f"Document date {document_date} is in closed period")
+        ensure_period_open(self.connection, self.context, document_date)
+
+
+def ensure_period_open(
+    connection: Connection,
+    context: RequestContext,
+    document_date: date,
+) -> None:
+    table = connection.engine._openerp_metadata.tables["sys_closed_periods"]
+    row = connection.execute(
+        select(table.c.closed_until).where(table.c.organization_id == context.organization_id)
+    ).first()
+    if row is None:
+        return
+    closed_until = row._mapping["closed_until"]
+    if document_date <= closed_until:
+        raise ClosedPeriodError(f"Document date {document_date} is in closed period")
 
 
 def set_closed_period(

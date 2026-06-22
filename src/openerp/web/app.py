@@ -22,9 +22,9 @@ from openerp.core.import_export import (
     read_xlsx_rows,
 )
 from openerp.core.metadata import CatalogDef, DocumentDef, FieldDef, FieldType
-from openerp.core.posting import DocumentPostingService
+from openerp.core.posting import ClosedPeriodError, DocumentPostingService, InsufficientStockError
 from openerp.core.repository import DocumentStateError, Repository
-from openerp.core.security import AuthenticationError, authenticate, load_user_context
+from openerp.core.security import AuthenticationError, PermissionDenied, authenticate, load_user_context
 from openerp.db import transaction
 
 templates = Jinja2Templates(directory="src/openerp/web/templates")
@@ -116,16 +116,33 @@ def parse_document_form(
     return normalized_header, table_parts
 
 
-def reference_options(repository: Repository, registry, field_name: str) -> list[dict] | None:
+def catalog_name_for_field(field_name: str, registry) -> str | None:
     if not field_name.endswith("_id"):
         return None
-    catalog_name = field_name[:-3]
-    if catalog_name not in {catalog.name for catalog in registry.catalogs()}:
+    catalog_names = {catalog.name for catalog in registry.catalogs()}
+    direct = field_name[:-3]
+    if direct in catalog_names:
+        return direct
+    parts = direct.split("_", 1)
+    if len(parts) == 2 and parts[1] in catalog_names:
+        return parts[1]
+    return None
+
+
+def reference_options(repository: Repository, registry, field_name: str) -> list[dict] | None:
+    catalog_name = catalog_name_for_field(field_name, registry)
+    if catalog_name is None:
         return None
     try:
         return repository.list_catalog_items(catalog_name)
     except Exception:
         return None
+
+
+def safe_redirect_path(next_path: str | None) -> str:
+    if not next_path or not next_path.startswith("/") or next_path.startswith("//"):
+        return "/"
+    return next_path
 
 
 def _collect_reference_options(
@@ -210,6 +227,33 @@ def create_app() -> FastAPI:
             status_code=409,
         )
 
+    @app.exception_handler(InsufficientStockError)
+    async def on_insufficient_stock(request: Request, exc: InsufficientStockError):
+        return templates.TemplateResponse(
+            request,
+            "error.html",
+            {"message": str(exc), "context": None},
+            status_code=409,
+        )
+
+    @app.exception_handler(ClosedPeriodError)
+    async def on_closed_period(request: Request, exc: ClosedPeriodError):
+        return templates.TemplateResponse(
+            request,
+            "error.html",
+            {"message": str(exc), "context": None},
+            status_code=409,
+        )
+
+    @app.exception_handler(PermissionDenied)
+    async def on_permission_denied(request: Request, exc: PermissionDenied):
+        return templates.TemplateResponse(
+            request,
+            "error.html",
+            {"message": str(exc), "context": None},
+            status_code=403,
+        )
+
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, context: CurrentContext):
         reports = [
@@ -252,7 +296,7 @@ def create_app() -> FastAPI:
                 status_code=401,
             )
         request.session["user_id"] = user["id"]
-        return RedirectResponse(next or "/", status_code=303)
+        return RedirectResponse(safe_redirect_path(next), status_code=303)
 
     @app.post("/logout")
     def logout(request: Request):
@@ -428,19 +472,23 @@ def create_app() -> FastAPI:
         context: CurrentContext,
         after_date: date | None = None,
         after_id: int | None = None,
+        limit: int = 50,
     ):
         with transaction(engine) as connection:
             repository = Repository(connection, registry, context)
             rows = repository.list_documents_keyset(
                 document_name,
+                limit=limit,
                 after_date=after_date,
                 after_id=after_id,
             )
         document = registry.document(document_name)
-        next_cursor = rows[-1] if rows else None
+        next_cursor = rows[-1] if len(rows) == limit else None
+        is_hx = request.headers.get("HX-Request") == "true"
+        template = "documents/_rows.html" if is_hx else "documents/list.html"
         return templates.TemplateResponse(
             request,
-            "documents/list.html",
+            template,
             {"document": document, "rows": rows, "next_cursor": next_cursor, "context": context},
         )
 
@@ -540,6 +588,9 @@ def create_app() -> FastAPI:
         document_id: int,
         context: CurrentContext,
     ):
+        document_def = registry.document(document_name)
+        if document_def.posting_handler is None:
+            raise DocumentStateError(f"Document {document_name} cannot be posted")
         with transaction(engine) as connection:
             repository = Repository(connection, registry, context)
             repository.get_document(document_name, document_id)

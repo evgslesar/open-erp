@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -256,7 +256,8 @@ class RegisterService:
         register = self.registry.accumulation_register(register_name)
         dimensions = dimensions or [item.name for item in register.dimensions]
         filters = filters or {}
-        opening = self.balance(register_name, start_date, dimensions=dimensions, filters=filters)
+        opening_date = start_date - timedelta(days=1) if start_date > date.min else date.min
+        opening = self.balance(register_name, opening_date, dimensions=dimensions, filters=filters)
         turnover_rows = self.turnover(
             register_name, start_date, end_date, dimensions=dimensions, filters=filters
         )
@@ -293,12 +294,16 @@ class RegisterService:
         register = self.registry.accumulation_register(register_name)
         movements = self.metadata.tables[register_movements_table(register_name)]
         totals = self.metadata.tables[register_totals_table(register_name)]
-        self.connection.execute(delete(totals))
+        self.connection.execute(
+            delete(totals).where(totals.c.organization_id == self.context.organization_id)
+        )
 
         grouped: dict[tuple[Any, ...], dict[str, Decimal]] = defaultdict(
             lambda: {resource.name: Decimal("0") for resource in register.resources}
         )
-        for row in self.connection.execute(select(movements)):
+        for row in self.connection.execute(
+            select(movements).where(movements.c.organization_id == self.context.organization_id)
+        ):
             mapping = dict(row._mapping)
             key = (
                 month_start(mapping["period"]),

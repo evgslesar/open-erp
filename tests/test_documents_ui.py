@@ -61,6 +61,20 @@ def _receipt_form(master: dict, qty: str = "10") -> dict:
     }
 
 
+def _sale_form(master: dict, qty: str = "5") -> dict:
+    return {
+        "date": date.today().isoformat(),
+        "counterparty_id": str(master["counterparty_id"]),
+        "warehouse_id": str(master["warehouse_id"]),
+        "comment": "test sale",
+        "lines.0.product_id": str(master["product_id"]),
+        "lines.0.quantity": qty,
+        "lines.0.price": "150.00",
+        "lines.0.amount_minor": str(int(qty) * 15000),
+        "lines.0.currency_id": str(master["currency_id"]),
+    }
+
+
 def test_create_document_via_form(client):
     test_client, master = client
     response = test_client.post(
@@ -160,3 +174,15 @@ def test_anonymous_cannot_create_documents(client):
     response = test_client.get("/documents/receipt/new", follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"].startswith("/login")
+
+
+def test_posting_sale_without_stock_returns_business_error(client):
+    test_client, master = client
+    create = test_client.post(
+        "/documents/sale/new", data=_sale_form(master), follow_redirects=False
+    )
+    document_url = create.headers["location"]
+    response = test_client.post(document_url + "/post", follow_redirects=False)
+    assert response.status_code == 409
+    assert "Internal Server Error" not in response.text
+    assert "Negative balance" in response.text or "Операция невозможна" in response.text

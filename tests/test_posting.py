@@ -3,16 +3,15 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import pytest
-from dateutil.relativedelta import relativedelta
 
-from openerp.core.posting import ClosedPeriodError, DocumentPostingService, set_closed_period
+from openerp.core.posting import ClosedPeriodError, DocumentPostingService, InsufficientStockError, set_closed_period
 from openerp.core.registers import RegisterService
-from openerp.core.repository import Repository
+from openerp.core.repository import DocumentStateError, Repository
 from openerp.db import transaction
 
 
 def previous_month_day() -> date:
-    return date.today().replace(day=1) - relativedelta(days=15)
+    return date.today().replace(day=1) - timedelta(days=15)
 
 
 def create_master_data(repository: Repository):
@@ -123,7 +122,7 @@ def test_negative_stock_is_blocked(app_state, context):
             3,
         )
         poster = DocumentPostingService(connection, registry, context)
-        with pytest.raises(ValueError):
+        with pytest.raises(InsufficientStockError):
             poster.post("sale", sale_id)
 
 

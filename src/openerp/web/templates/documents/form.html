@@ -73,7 +73,7 @@
     {% for part in document_def.table_parts %}
     {% set part_rows = document.get(part.name) or [] %}
     <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden"
-         x-data="{ rows: {{ part_rows | tojson | safe }} }">
+         x-data="{ partName: '{{ part.name }}', rows: {{ part_rows | tojson | safe }} }">
       <div class="flex items-center justify-between px-4 py-3 border-b border-surface-border">
         <h2 class="text-sm font-semibold text-slate-700">{{ part.label }}</h2>
         <button type="button" @click="rows.push({})"
@@ -101,7 +101,7 @@
                 {% set field_name = field.name %}
                 <td class="px-3 py-1.5">
                   {% if references and references.get(field_name) is not none %}
-                  <select :name="`${part.name}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
+                  <select :name="`${partName}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
                           class="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-primary outline-none bg-white">
                     <option value="">—</option>
                     {% for item in references[field_name] %}
@@ -109,13 +109,13 @@
                     {% endfor %}
                   </select>
                   {% elif field.type == 'integer' or field.type == 'money' %}
-                  <input type="number" step="1" :name="`${part.name}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
+                  <input type="number" step="1" :name="`${partName}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
                          class="w-full px-2 py-1 border border-slate-200 rounded text-xs num focus:ring-1 focus:ring-primary outline-none">
                   {% elif field.type == 'decimal' %}
-                  <input type="text" inputmode="decimal" :name="`${part.name}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
+                  <input type="text" inputmode="decimal" :name="`${partName}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
                          class="w-full px-2 py-1 border border-slate-200 rounded text-xs num focus:ring-1 focus:ring-primary outline-none">
                   {% else %}
-                  <input type="text" :name="`${part.name}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
+                  <input type="text" :name="`${partName}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
                          class="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-primary outline-none">
                   {% endif %}
                 </td>

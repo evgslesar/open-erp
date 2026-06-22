@@ -1,0 +1,27 @@
+{% import "documents/_macros.html" as doc_macros %}
+{% for row in rows %}
+<tr class="hover:bg-slate-50 transition-colors">
+  <td class="px-4 py-3 text-slate-600 num">{{ row.date }}</td>
+  <td class="px-4 py-3 font-medium text-slate-700 num">{{ row.number }}</td>
+  <td class="px-4 py-3">{{ doc_macros.status_badge(row.status) }}</td>
+  <td class="px-4 py-3 text-slate-500 max-w-xs truncate">{{ row.comment or '' }}</td>
+  <td class="px-4 py-3 text-right">
+    <a href="/documents/{{ document.name }}/{{ row.id }}"
+       class="text-primary hover:text-primary-dark text-xs font-medium">Открыть</a>
+  </td>
+</tr>
+{% endfor %}
+
+{% if next_cursor %}
+<div id="document-load-more" hx-swap-oob="outerHTML">
+  <div class="text-center" id="document-load-more">
+    <button hx-get="/documents/{{ document.name }}?after_date={{ next_cursor.date }}&after_id={{ next_cursor.id }}"
+            hx-target="#document-rows" hx-swap="beforeend"
+            class="px-4 py-2 text-sm border border-surface-border rounded-lg hover:bg-slate-50 transition-colors text-slate-600">
+      Загрузить ещё
+    </button>
+  </div>
+</div>
+{% else %}
+<div id="document-load-more" hx-swap-oob="outerHTML"></div>
+{% endif %}
