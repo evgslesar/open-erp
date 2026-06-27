@@ -5,9 +5,10 @@ Open ERP — открытая веб-система учёта для малог
 MVP покрывает:
 
 - справочники: организации, контрагенты, номенклатура, склады, валюты, единицы, статьи ДДС, денежные счета, типы цен;
-- документы: поступление, реализация, перемещение, корректировка остатков, заказ покупателя, кассовые и банковские платежи;
+- документы: поступление, реализация, возвраты, перемещение, корректировка остатков, заказы покупателя и поставщику, кассовые и банковские платежи;
 - регистры накопления (товары, взаиморасчёты, денежные средства) и регистры сведений (цены, курсы валют);
 - сводка на главной (балансы, графики, таблицы);
+- глобальный поиск по справочникам и документам (шапка, `/`, страница результатов);
 - отчёты, печатные формы, импорт/экспорт CSV/XLSX;
 - роли, разрешения, организации, аудит и журнал операций;
 - SQLite по умолчанию, PostgreSQL для роста;
@@ -33,6 +34,7 @@ MVP покрывает:
 - [Тестирование](#тестирование)
 - [Стиль кода](#стиль-кода)
 - [Расширение: новый модуль](#расширение-новый-модуль)
+- [Пользовательская документация](#пользовательская-документация)
 - [Лицензия](#лицензия)
 
 ## Архитектура
@@ -99,6 +101,7 @@ src/openerp/
 │   ├── registers.py          # RegisterService
 │   ├── repository.py         # CRUD по справочникам/документам
 │   ├── schema.py             # сборка SQLAlchemy MetaData
+│   ├── search.py             # глобальный поиск по справочникам и документам
 │   └── security.py           # bcrypt, require_permission
 ├── modules/trade/
 │   ├── __init__.py           # register(registry)
@@ -110,10 +113,19 @@ src/openerp/
 └── web/
     ├── app.py                # FastAPI-приложение
     └── templates/            # Jinja2-шаблоны
+        ├── partials/
+        │   ├── app_header.html      # шапка с глобальным поиском
+        │   ├── global_search.html   # поле поиска и выпадающие подсказки
+        │   └── sidebar_panel.html
+        ├── search.html              # страница результатов поиска
+        ├── audit/list.html          # журнал аудита (админ)
+        ├── operations/list.html     # журнал операций (админ)
+        └── settings/closed_period.html
 tests/                         # pytest, TestClient
 data/                          # SQLite и .secret_key (создаются при init)
 backups/                       # вывод команды backup
-docs/                          # пользовательская документация
+user-manual.md                 # инструкция для пользователя
+docs/                          # ADR и developer guide
 ```
 
 Соглашение об именовании таблиц (`openerp/core/naming.py`):
@@ -168,6 +180,7 @@ $env:OPENERP_DATABASE_URL = "sqlite:///data/dev.db"
 
 - `create_db_engine(url)` создаёт `sqlalchemy.create_engine(..., future=True)`;
 - для SQLite включает PRAGMA: `journal_mode=WAL`, `busy_timeout=5000`, `foreign_keys=ON`;
+- для SQLite регистрирует функцию `unicode_lower` (Python `casefold`) — регистронезависимый поиск по кириллице в `core/search.py`;
 - `transaction(engine)` — контекстный менеджер `engine.begin()`.
 
 Для PostgreSQL используйте `psycopg[binary]` (`pip install -e ".[postgres]"`) и переменную `OPENERP_DATABASE_URL=postgresql+psycopg://user:pass@host/db`.
@@ -296,6 +309,8 @@ def post_receipt(context: PostingContext) -> None:
 
 В модуле `trade` регистр `cash` хранит движения денежных средств по типу счета, денежному счету, статье ДДС и валюте. Контроль отрицательного остатка агрегирует деньги по `money_account_id` и `currency_id`, поэтому расход по одной статье ДДС может использовать общий доступный остаток счета. Отчёт `cash` также показывает итоговый остаток по денежному счету и валюте.
 
+Регистр `stock_reserved` хранит резервы по проведённым заказам покупателя. При проведении реализации с полем `based_on_order_id` резерв по строкам заказа снимается. Доступный остаток для продажи = `stock` − `stock_reserved`; отчёт «Остатки товаров» показывает физический остаток без вычета резерва.
+
 Отчёты (`openerp/modules/trade/reports.py`) — это функции `(connection, registry, context, **params) -> list[dict]`. Параметры приходят из query-string; веб-слой фильтрует их по сигнатуре (`web/app.py:_call_report_handler`), лишние параметры молча отбрасываются.
 
 ```python
@@ -313,7 +328,35 @@ def stock_balance_report(
 
 Регистрация: `registry.register_report_handler("trade.stock_balance_report", stock_balance_report)`.
 
+Отчёты модуля `trade`:
+
+| Имя | Назначение | Параметры |
+|-----|------------|-----------|
+| `stock_balance` | Остатки товаров на дату | `on_date` |
+| `sales` | Продажи за период (с учётом возвратов) | `date_from`, `date_to` |
+| `settlements` | Взаиморасчёты на дату | `on_date` |
+| `cash` | Денежные средства на дату | `on_date` |
+| `turnover` | Оборотно-сальдовая ведомость по складу | `date_from`, `date_to` |
+| `payment_calendar` | Платежный календарь (суммы проведённых продаж и закупок) | `date_from`, `date_to` |
+
 Сводка для главной страницы — `dashboard_summary(...)` в `openerp/modules/trade/reports.py`. Функция агрегирует остатки денег, продажи с начала месяца, взаиморасчёты, топ товаров и данные для графиков (Chart.js). Маршрут `/` передаёт результат в шаблон `index.html`.
+
+## Глобальный поиск
+
+`openerp/core/search.py:global_search` ищет по всем справочникам и документам текущей организации:
+
+- справочники — поле `name` и строковые реквизиты (артикул, ИНН, код и т.д.);
+- документы — `number`, `comment` и строковые реквизиты шапки;
+- учитываются права `read` на объект; помеченные на удаление записи исключаются;
+- на SQLite сравнение регистронезависимо для кириллицы через `unicode_lower` (`db.py`).
+
+Веб-интерфейс:
+
+- поле в шапке (`partials/global_search.html`) с подсказками через `GET /api/search?q=...&limit=10`;
+- горячая клавиша `/` (не перехватывается, если фокус в поле ввода формы);
+- полная страница результатов — `GET /search?q=...`, группировка по типу объекта (Номенклатура, Реализация и т.д.).
+
+Поиск по строкам табличных частей и по движениям регистров пока не реализован — см. бэклог в `.cursor/plans/erp_specification_7bab5dad.plan.md`.
 
 ## Веб-слой (FastAPI)
 
@@ -329,6 +372,8 @@ def stock_balance_report(
 |--------|---------------------------------------------------|-------------------------------------------------------|
 | GET    | `/`                                               | Главная: сводка (KPI, графики, таблицы) + навигация   |
 | GET    | `/login`, POST `/login`, POST `/logout`           | Аутентификация                                        |
+| GET    | `/search?q=`                                      | Страница результатов глобального поиска               |
+| GET    | `/api/search?q=&limit=`                           | JSON для выпадающих подсказок поиска                  |
 | GET    | `/catalogs/{name}`                                | Список элементов справочника                          |
 | GET/POST | `/catalogs/{name}/new`                          | Создание элемента                                     |
 | GET/POST | `/catalogs/{name}/{id}/edit`                   | Редактирование                                        |
@@ -346,6 +391,19 @@ def stock_balance_report(
 | GET    | `/documents/{name}/{id}/print`                    | Печатная форма                                        |
 | GET    | `/reports/{name}?on_date=&date_from=&date_to=`    | HTML-отчёт                                            |
 | GET    | `/reports/{name}/export?fmt=csv\|xlsx&...`        | Скачивание отчёта в CSV/XLSX                         |
+| GET    | `/settings/closed-period`                         | Закрытый период (админ)                               |
+| POST   | `/settings/closed-period`                         | Сохранить дату закрытия периода                       |
+| GET    | `/audit`                                          | Журнал аудита (админ)                                 |
+| GET    | `/operations`                                     | Журнал операций (админ)                               |
+| GET    | `/api/price?product_id=&price_type_id=&on_date=` | Цена из регистра сведений `prices`                    |
+| GET    | `/api/v1/catalogs/{name}?q=&limit=`               | JSON-список справочника                               |
+| GET    | `/api/v1/catalogs/{name}/{id}`                    | JSON-элемент справочника                              |
+| GET    | `/api/v1/documents/{name}?date_from=&status=...`  | JSON-список документов (фильтры как в веб-журнале)    |
+| GET    | `/api/v1/documents/{name}/{id}`                   | JSON-документ с табличными частями                    |
+
+Создание поступления на основании заказа поставщику: `GET /documents/receipt/new?based_on=purchase_order/{id}` — подставляет контрагента, склад и строки.
+
+Печатные формы реализации: `/documents/sale/{id}/print?form=invoice_html` (счёт), `?form=act_html` (акт). Без параметра `form` — стандартная HTML-форма документа.
 
 Параметры отчётов: `on_date` (для отчётов по остаткам), `date_from` и `date_to` (для отчётов по оборотам). Для каждого отчёта фильтруются параметры по сигнатуре обработчика.
 
@@ -353,11 +411,12 @@ def stock_balance_report(
 
 Шаблоны Jinja2 (`src/openerp/web/templates/`):
 
-- `base.html` — общая разметка;
-- `login.html`, `error.html`, `index.html`;
+- `base.html` — общая разметка, шапка с поиском;
+- `login.html`, `error.html`, `index.html`, `search.html`;
 - `catalogs/list.html`, `form.html`, `import.html`;
-- `documents/list.html`, `form.html`, `view.html`, `print_form.html`;
-- `reports/generic.html`.
+- `documents/list.html`, `form.html`, `view.html`, `print_form.html`, `print_invoice.html`, `print_act.html`;
+- `reports/generic.html`;
+- `audit/list.html`, `operations/list.html`, `settings/closed_period.html`.
 
 ## Импорт и экспорт
 
@@ -445,9 +504,11 @@ Cookie-сессии: `Starlette.SessionMiddleware` с `secret_key` из наст
 - `test_dashboard.py` — главная страница с KPI и графиками;
 - `test_reports.py` — отчёты, экспорт, лишние query-параметры;
 - `test_reports_ui_data.py` — данные отчётов и экспорт;
-- `test_import.py` — импорт CSV/XLSX.
+- `test_import.py` — импорт CSV/XLSX;
+- `test_search.py` — глобальный поиск, API, регистронезависимость по кириллице;
+- `test_trade_gaps.py` — резервы по заказам, возвраты, фильтры журналов, REST API, отчёты оборотов и платежного календаря, закрытый период в UI.
 
-Тестовая БД — временный файл в `tmp_path` (см. `tests/conftest.py:app_state`).
+Тестовая БД — временный файл в `tmp_path` (см. `tests/conftest.py:app_state`). Полный прогон: 95 тестов.
 
 ## Стиль кода
 
@@ -519,6 +580,12 @@ def register(registry: MetadataRegistry) -> None:
 ```
 
 Подключите модуль в `openerp/bootstrap.py:build_registry`. Новые таблицы создаются автоматически при следующем `init-db`.
+
+## Пользовательская документация
+
+Пошаговая инструкция для сотрудников (без технических терминов): [`user-manual.md`](user-manual.md).
+
+Для разработчиков: [`docs/developer.md`](docs/developer.md), критерии MVP — [`docs/mvp-done.md`](docs/mvp-done.md).
 
 ## Лицензия
 

@@ -46,17 +46,28 @@ class Repository:
         )
         return item_id
 
-    def list_catalog_items(self, catalog_name: str, limit: int = 100) -> list[dict[str, Any]]:
+    def list_catalog_items(
+        self,
+        catalog_name: str,
+        limit: int = 100,
+        q: str | None = None,
+    ) -> list[dict[str, Any]]:
         require_permission(self.connection, self.context, f"catalog:{catalog_name}", "read")
         table = self.metadata.tables[catalog_table(catalog_name)]
+        conditions = [
+            table.c.organization_id == self.context.organization_id,
+            table.c.deletion_mark.is_(False),
+        ]
+        if q:
+            from openerp.core.search import _like_pattern, _text_conditions
+
+            pattern = _like_pattern(q.strip())
+            match = _text_conditions(self.connection, table, ["name"], pattern)
+            if match is not None:
+                conditions.append(match)
         query = (
             select(table)
-            .where(
-                and_(
-                    table.c.organization_id == self.context.organization_id,
-                    table.c.deletion_mark.is_(False),
-                )
-            )
+            .where(and_(*conditions))
             .order_by(table.c.name)
             .limit(limit)
         )
@@ -271,6 +282,11 @@ class Repository:
         limit: int = 50,
         after_date: date | None = None,
         after_id: int | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        status: str | None = None,
+        counterparty_id: int | None = None,
+        warehouse_id: int | None = None,
     ) -> list[dict[str, Any]]:
         require_permission(self.connection, self.context, f"document:{document_name}", "read")
         table = self.metadata.tables[document_table(document_name)]
@@ -278,6 +294,16 @@ class Repository:
             table.c.organization_id == self.context.organization_id,
             table.c.deletion_mark.is_(False),
         ]
+        if date_from is not None:
+            conditions.append(table.c.date >= date_from)
+        if date_to is not None:
+            conditions.append(table.c.date <= date_to)
+        if status:
+            conditions.append(table.c.status == status)
+        if counterparty_id is not None and "counterparty_id" in table.c:
+            conditions.append(table.c.counterparty_id == counterparty_id)
+        if warehouse_id is not None and "warehouse_id" in table.c:
+            conditions.append(table.c.warehouse_id == warehouse_id)
         if after_date is not None and after_id is not None:
             conditions.append(
                 (table.c.date < after_date)

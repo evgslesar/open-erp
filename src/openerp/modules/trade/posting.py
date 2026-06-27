@@ -5,9 +5,10 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from openerp.core.decimal import to_decimal
-from openerp.core.naming import catalog_table
+from openerp.core.naming import catalog_table, document_table
 from openerp.core.posting import InvalidPostingError, PostingContext
 from openerp.core.registers import RegisterService
+from openerp.core.repository import Repository
 
 
 def post_receipt(context: PostingContext) -> None:
@@ -67,6 +68,110 @@ def post_sale(context: PostingContext) -> None:
                 "currency_id": line["currency_id"],
             },
             resources={"amount_minor": line["amount_minor"]},
+        )
+    if document.get("based_on_order_id"):
+        _release_order_reservation(context, registers, document)
+
+
+def post_sale_return(context: PostingContext) -> None:
+    registers = RegisterService(context.connection, context.registry, context.context)
+    document = context.document
+    for line in document["lines"]:
+        registers.add_movement(
+            "stock",
+            period=document["date"],
+            registrator_type=context.document_name,
+            registrator_id=context.document_id,
+            line_no=line["line_no"],
+            dimensions={
+                "warehouse_id": document["warehouse_id"],
+                "product_id": line["product_id"],
+            },
+            resources={"quantity": to_decimal(line["quantity"])},
+        )
+        registers.add_movement(
+            "settlements",
+            period=document["date"],
+            registrator_type=context.document_name,
+            registrator_id=context.document_id,
+            line_no=line["line_no"],
+            dimensions={
+                "counterparty_id": document["counterparty_id"],
+                "currency_id": line["currency_id"],
+            },
+            resources={"amount_minor": -line["amount_minor"]},
+        )
+
+
+def post_purchase_return(context: PostingContext) -> None:
+    registers = RegisterService(context.connection, context.registry, context.context)
+    document = context.document
+    for line in document["lines"]:
+        registers.add_movement(
+            "stock",
+            period=document["date"],
+            registrator_type=context.document_name,
+            registrator_id=context.document_id,
+            line_no=line["line_no"],
+            dimensions={
+                "warehouse_id": document["warehouse_id"],
+                "product_id": line["product_id"],
+            },
+            resources={"quantity": -to_decimal(line["quantity"])},
+        )
+        registers.add_movement(
+            "settlements",
+            period=document["date"],
+            registrator_type=context.document_name,
+            registrator_id=context.document_id,
+            line_no=line["line_no"],
+            dimensions={
+                "counterparty_id": document["counterparty_id"],
+                "currency_id": line["currency_id"],
+            },
+            resources={"amount_minor": line["amount_minor"]},
+        )
+
+
+def post_order(context: PostingContext) -> None:
+    registers = RegisterService(context.connection, context.registry, context.context)
+    document = context.document
+    for line in document["lines"]:
+        registers.add_movement(
+            "stock_reserved",
+            period=document["date"],
+            registrator_type=context.document_name,
+            registrator_id=context.document_id,
+            line_no=line["line_no"],
+            dimensions={
+                "warehouse_id": document["warehouse_id"],
+                "product_id": line["product_id"],
+            },
+            resources={"quantity": to_decimal(line["quantity"])},
+        )
+
+
+def _release_order_reservation(
+    context: PostingContext,
+    registers: RegisterService,
+    document: dict,
+) -> None:
+    order_id = document["based_on_order_id"]
+    repository = Repository(context.connection, context.registry, context.context)
+    order = repository.get_document("order", order_id)
+    warehouse_id = document.get("warehouse_id") or order["warehouse_id"]
+    for line in document["lines"]:
+        registers.add_movement(
+            "stock_reserved",
+            period=document["date"],
+            registrator_type=context.document_name,
+            registrator_id=context.document_id,
+            line_no=line["line_no"] + 1000,
+            dimensions={
+                "warehouse_id": warehouse_id,
+                "product_id": line["product_id"],
+            },
+            resources={"quantity": -to_decimal(line["quantity"])},
         )
 
 
@@ -130,6 +235,7 @@ def post_bank_payment(context: PostingContext) -> None:
 def post_payment(context: PostingContext, account_type: str) -> None:
     registers = RegisterService(context.connection, context.registry, context.context)
     document = context.document
+    _validate_allocation(context)
     _ensure_money_account(context, document["money_account_id"], account_type, document["currency_id"])
     multiplier = 1 if document["direction"] == "incoming" else -1
     amount_minor = document["amount_minor"] * multiplier
@@ -159,6 +265,32 @@ def post_payment(context: PostingContext, account_type: str) -> None:
         },
         resources={"amount_minor": -amount_minor},
     )
+
+
+def _validate_allocation(context: PostingContext) -> None:
+    document = context.document
+    doc_type = document.get("allocation_document_type")
+    doc_id = document.get("allocation_document_id")
+    if not doc_type and not doc_id:
+        return
+    if not doc_type or not doc_id:
+        raise InvalidPostingError(
+            "Для распределения платежа нужны и тип документа, и идентификатор"
+        )
+    try:
+        context.registry.document(doc_type)
+    except ValueError as error:
+        raise InvalidPostingError(f"Неизвестный тип документа: {doc_type}") from error
+    table = context.connection.engine._openerp_metadata.tables[document_table(doc_type)]
+    row = context.connection.execute(
+        select(table.c.id).where(
+            table.c.id == doc_id,
+            table.c.organization_id == context.context.organization_id,
+            table.c.deletion_mark.is_(False),
+        )
+    ).first()
+    if row is None:
+        raise InvalidPostingError(f"Документ {doc_type}/{doc_id} не найден")
 
 
 def _ensure_money_account(

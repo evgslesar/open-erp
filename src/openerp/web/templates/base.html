@@ -71,7 +71,7 @@
   </style>
 </head>
 <body class="bg-surface text-slate-800 antialiased"
-      x-data="{ menuOpen: false }"
+      x-data="appShell()"
       :class="menuOpen ? 'overflow-hidden' : ''"
       @keydown.escape.window="menuOpen = false">
   <div class="flex min-h-screen">
@@ -108,24 +108,104 @@
     </div>
 
     {# Main content #}
-    <main class="flex-1 min-w-0 min-h-screen overflow-x-hidden">
-      {# Mobile top bar #}
-      <div class="md:hidden sticky top-0 z-30 flex items-center gap-3 px-4 py-3 bg-surface-card/95 backdrop-blur border-b border-surface-border">
-        <button type="button"
-                @click="menuOpen = true"
-                class="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-surface-border bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+    <main class="flex-1 min-w-0 flex flex-col overflow-hidden">
+      {% if context %}
+      {# Mobile: menu + search without a shrinking top bar #}
+      <div class="md:hidden fixed top-3 left-3 right-3 z-40 flex items-center justify-between pointer-events-none">
+        <button type="button" @click="menuOpen = true"
+                class="pointer-events-auto inline-flex items-center justify-center w-10 h-10 rounded-lg border border-surface-border bg-white/95 backdrop-blur text-slate-700 shadow-sm hover:bg-white transition-colors"
                 aria-label="Открыть меню">
           <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/>
           </svg>
         </button>
-        <a href="/" class="text-base font-semibold text-primary-dark">Open ERP</a>
+        <button type="button" @click="openPanel()"
+                class="pointer-events-auto inline-flex items-center justify-center w-10 h-10 rounded-lg border border-surface-border bg-white/95 backdrop-blur text-slate-600 shadow-sm hover:bg-white hover:text-primary transition-colors"
+                aria-label="Поиск">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
+          </svg>
+        </button>
       </div>
+      {% include "partials/global_search.html" %}
+      {% endif %}
 
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {% block content %}{% endblock %}
+      <div class="flex-1 min-h-0 overflow-x-hidden overflow-y-auto {% if context %}pt-16 md:pt-0{% endif %}">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {% block content %}{% endblock %}
+        </div>
       </div>
     </main>
   </div>
+  {% if context %}
+  <script>
+  function globalSearch() {
+    return {
+      query: '',
+      results: [],
+      open: false,
+      panelOpen: false,
+      loading: false,
+      _requestSeq: 0,
+      openPanel() {
+        this.panelOpen = true;
+        this.$nextTick(() => this.$refs.searchInput?.focus());
+      },
+      closePanel() {
+        this.panelOpen = false;
+        this.open = false;
+      },
+      async fetchResults() {
+        const q = this.query.trim();
+        if (!q) {
+          this.results = [];
+          return;
+        }
+        const requestSeq = ++this._requestSeq;
+        this.loading = true;
+        try {
+          const resp = await fetch('/api/search?q=' + encodeURIComponent(q) + '&limit=10');
+          if (!resp.ok || requestSeq !== this._requestSeq) {
+            return;
+          }
+          const data = await resp.json();
+          if (requestSeq !== this._requestSeq) {
+            return;
+          }
+          this.results = data.results || [];
+        } catch (e) {
+          if (requestSeq === this._requestSeq) {
+            this.results = [];
+          }
+        } finally {
+          if (requestSeq === this._requestSeq) {
+            this.loading = false;
+          }
+        }
+      },
+    };
+  }
+
+  function appShell() {
+    return {
+      menuOpen: false,
+      ...globalSearch(),
+      init() {
+        window.addEventListener('keydown', (event) => {
+          if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) {
+            return;
+          }
+          const target = event.target;
+          if (target && target.closest('input, textarea, select, [contenteditable=true]')) {
+            return;
+          }
+          event.preventDefault();
+          this.openPanel();
+        });
+      },
+    };
+  }
+  </script>
+  {% endif %}
 </body>
 </html>

@@ -30,6 +30,7 @@ product = CatalogDef(
     label="Номенклатура",
     fields=(
         FieldDef("sku", FieldType.STRING, "Артикул", indexed=True),
+        FieldDef("barcode", FieldType.STRING, "Штрихкод", indexed=True),
         FieldDef("unit", FieldType.STRING, "Единица", required=True, default="шт"),
     ),
 )
@@ -95,12 +96,19 @@ goods_lines = (
     ),
 )
 
+payment_allocation_fields = (
+    FieldDef("allocation_document_type", FieldType.STRING, "Тип документа-основания", indexed=True),
+    FieldDef("allocation_document_id", FieldType.INTEGER, "Документ-основание", indexed=True),
+)
+
 receipt = DocumentDef(
     name="receipt",
     label="Поступление товаров",
     fields=(
         FieldDef("counterparty_id", FieldType.INTEGER, "Контрагент", required=True, indexed=True),
         FieldDef("warehouse_id", FieldType.INTEGER, "Склад", required=True, indexed=True),
+        FieldDef("price_type_id", FieldType.INTEGER, "Тип цены", indexed=True),
+        FieldDef("based_on_document_id", FieldType.INTEGER, "Заказ поставщику", indexed=True),
     ),
     table_parts=goods_lines,
     posting_handler="trade.post_receipt",
@@ -112,9 +120,35 @@ sale = DocumentDef(
     fields=(
         FieldDef("counterparty_id", FieldType.INTEGER, "Контрагент", required=True, indexed=True),
         FieldDef("warehouse_id", FieldType.INTEGER, "Склад", required=True, indexed=True),
+        FieldDef("price_type_id", FieldType.INTEGER, "Тип цены", indexed=True),
+        FieldDef("based_on_order_id", FieldType.INTEGER, "Заказ покупателя", indexed=True),
     ),
     table_parts=goods_lines,
     posting_handler="trade.post_sale",
+)
+
+sale_return = DocumentDef(
+    name="sale_return",
+    label="Возврат от покупателя",
+    fields=(
+        FieldDef("counterparty_id", FieldType.INTEGER, "Контрагент", required=True, indexed=True),
+        FieldDef("warehouse_id", FieldType.INTEGER, "Склад", required=True, indexed=True),
+        FieldDef("price_type_id", FieldType.INTEGER, "Тип цены", indexed=True),
+    ),
+    table_parts=goods_lines,
+    posting_handler="trade.post_sale_return",
+)
+
+purchase_return = DocumentDef(
+    name="purchase_return",
+    label="Возврат поставщику",
+    fields=(
+        FieldDef("counterparty_id", FieldType.INTEGER, "Контрагент", required=True, indexed=True),
+        FieldDef("warehouse_id", FieldType.INTEGER, "Склад", required=True, indexed=True),
+        FieldDef("price_type_id", FieldType.INTEGER, "Тип цены", indexed=True),
+    ),
+    table_parts=goods_lines,
+    posting_handler="trade.post_purchase_return",
 )
 
 transfer = DocumentDef(
@@ -189,6 +223,19 @@ order = DocumentDef(
     fields=(
         FieldDef("counterparty_id", FieldType.INTEGER, "Контрагент", required=True, indexed=True),
         FieldDef("warehouse_id", FieldType.INTEGER, "Склад", required=True, indexed=True),
+        FieldDef("price_type_id", FieldType.INTEGER, "Тип цены", indexed=True),
+    ),
+    table_parts=goods_lines,
+    posting_handler="trade.post_order",
+)
+
+purchase_order = DocumentDef(
+    name="purchase_order",
+    label="Заказ поставщику",
+    fields=(
+        FieldDef("counterparty_id", FieldType.INTEGER, "Контрагент", required=True, indexed=True),
+        FieldDef("warehouse_id", FieldType.INTEGER, "Склад", required=True, indexed=True),
+        FieldDef("price_type_id", FieldType.INTEGER, "Тип цены", indexed=True),
     ),
     table_parts=goods_lines,
 )
@@ -215,6 +262,7 @@ cash_payment = DocumentDef(
         FieldDef("direction", FieldType.STRING, "Направление", required=True, default="outgoing"),
         FieldDef("amount_minor", FieldType.MONEY, "Сумма в копейках", required=True),
         FieldDef("currency_id", FieldType.INTEGER, "Валюта", required=True),
+        *payment_allocation_fields,
     ),
     posting_handler="trade.post_cash_payment",
 )
@@ -229,6 +277,16 @@ bank_payment = DocumentDef(
 stock_register = AccumulationRegisterDef(
     name="stock",
     label="Товары на складах",
+    dimensions=(
+        FieldDef("warehouse_id", FieldType.INTEGER, "Склад", required=True, indexed=True),
+        FieldDef("product_id", FieldType.INTEGER, "Номенклатура", required=True, indexed=True),
+    ),
+    resources=(FieldDef("quantity", FieldType.DECIMAL, "Количество", required=True),),
+)
+
+stock_reserved_register = AccumulationRegisterDef(
+    name="stock_reserved",
+    label="Резерв товаров",
     dimensions=(
         FieldDef("warehouse_id", FieldType.INTEGER, "Склад", required=True, indexed=True),
         FieldDef("product_id", FieldType.INTEGER, "Номенклатура", required=True, indexed=True),
@@ -287,7 +345,7 @@ currency_rate_register = InformationRegisterDef(
 
 trade_module = ModuleDef(
     name="trade",
-    version="0.1.0",
+    version="0.2.0",
     catalogs=(
         organization,
         counterparty,
@@ -302,22 +360,29 @@ trade_module = ModuleDef(
     documents=(
         receipt,
         sale,
+        sale_return,
+        purchase_return,
         transfer,
         inventory_adjustment,
         order,
+        purchase_order,
         cash_payment,
         bank_payment,
     ),
-    accumulation_registers=(stock_register, settlements_register, cash_register),
+    accumulation_registers=(stock_register, stock_reserved_register, settlements_register, cash_register),
     information_registers=(price_register, currency_rate_register),
     reports=(
         ReportDef("stock_balance", "Остатки товаров", "trade.stock_balance_report"),
         ReportDef("sales", "Продажи", "trade.sales_report"),
         ReportDef("settlements", "Взаиморасчёты", "trade.settlements_report"),
         ReportDef("cash", "Денежные средства", "trade.cash_report"),
+        ReportDef("turnover", "Оборотно-сальдовая ведомость", "trade.turnover_report"),
+        ReportDef("payment_calendar", "Платежный календарь", "trade.payment_calendar_report"),
     ),
     print_forms=(
         PrintFormDef("receipt_html", "Поступление HTML", "receipt", "documents/print_form.html"),
         PrintFormDef("sale_html", "Реализация HTML", "sale", "documents/print_form.html"),
+        PrintFormDef("invoice_html", "Счёт на оплату", "sale", "documents/print_invoice.html"),
+        PrintFormDef("act_html", "Акт выполненных работ", "sale", "documents/print_act.html"),
     ),
 )

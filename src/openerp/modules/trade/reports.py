@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.engine import Connection
 
 from openerp.core.context import RequestContext
@@ -56,18 +56,20 @@ def sales_report(
     end_date = date_to or date.today()
     start_date = date_from or date.min
     service = RegisterService(connection, registry, context)
-    movements = service.movements(
-        "stock",
-        start_date=start_date,
-        end_date=end_date,
-        filters={"registrator_type": "sale"},
-    )
     grouped: dict[int, dict[str, Decimal]] = {}
-    for move in movements:
-        product_id = move["product_id"]
-        bucket = grouped.setdefault(product_id, {"quantity": Decimal("0"), "amount_minor": 0})
-        bucket["quantity"] += to_decimal(move["quantity"])
-        bucket["amount_minor"] += _line_amount(connection, move)
+    for registrator_type in ("sale", "sale_return"):
+        movements = service.movements(
+            "stock",
+            start_date=start_date,
+            end_date=end_date,
+            filters={"registrator_type": registrator_type},
+        )
+        amount_sign = 1 if registrator_type == "sale" else -1
+        for move in movements:
+            product_id = move["product_id"]
+            bucket = grouped.setdefault(product_id, {"quantity": Decimal("0"), "amount_minor": 0})
+            bucket["quantity"] += to_decimal(move["quantity"])
+            bucket["amount_minor"] += amount_sign * _line_amount(connection, move, registrator_type)
 
     products = _catalog_name_map(connection, "product", context.organization_id)
     result: list[dict[str, Any]] = []
@@ -83,9 +85,13 @@ def sales_report(
     return result
 
 
-def _line_amount(connection: Connection, movement: dict) -> int:
+def _line_amount(
+    connection: Connection,
+    movement: dict,
+    document_name: str = "sale",
+) -> int:
     metadata = connection.engine._openerp_metadata
-    lines_table = metadata.tables["doc_sale_lines"]
+    lines_table = metadata.tables[f"doc_{document_name}_lines"]
     row = connection.execute(
         select(lines_table.c.amount_minor).where(
             lines_table.c.document_id == movement["registrator_id"],
@@ -131,6 +137,86 @@ def cash_report(
             row.get("money_account_id"), row.get("money_account_id")
         )
     return rows
+
+
+def turnover_report(
+    connection: Connection,
+    registry: MetadataRegistry,
+    context: RequestContext,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[dict]:
+    end_date = date_to or date.today()
+    start_date = date_from or end_date.replace(day=1)
+    service = RegisterService(connection, registry, context)
+    rows = service.balance_and_turnover("stock", start_date, end_date)
+    products = _catalog_name_map(connection, "product", context.organization_id)
+    warehouses = _catalog_name_map(connection, "warehouse", context.organization_id)
+    for row in rows:
+        row["product_name"] = products.get(row.get("product_id"), row.get("product_id"))
+        row["warehouse_name"] = warehouses.get(row.get("warehouse_id"), row.get("warehouse_id"))
+    return rows
+
+
+def payment_calendar_report(
+    connection: Connection,
+    registry: MetadataRegistry,
+    context: RequestContext,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[dict]:
+    end_date = date_to or date.today()
+    start_date = date_from or end_date.replace(day=1)
+    counterparties = _catalog_name_map(connection, "counterparty", context.organization_id)
+    metadata = connection.engine._openerp_metadata
+    result: list[dict[str, Any]] = []
+    for doc_name, direction in (("sale", 1), ("receipt", -1)):
+        doc_table = metadata.tables[f"doc_{doc_name}"]
+        lines_table = metadata.tables[f"doc_{doc_name}_lines"]
+        docs = connection.execute(
+            select(
+                doc_table.c.id,
+                doc_table.c.number,
+                doc_table.c.date,
+                doc_table.c.counterparty_id,
+            ).where(
+                doc_table.c.organization_id == context.organization_id,
+                doc_table.c.status == "posted",
+                doc_table.c.date >= start_date,
+                doc_table.c.date <= end_date,
+                doc_table.c.deletion_mark.is_(False),
+            )
+        ).fetchall()
+        for doc in docs:
+            mapping = dict(doc._mapping)
+            line_total = connection.execute(
+                select(func.coalesce(func.sum(lines_table.c.amount_minor), 0)).where(
+                    lines_table.c.document_id == mapping["id"]
+                )
+            ).scalar_one()
+            amount_minor = int(line_total) * direction
+            if amount_minor == 0:
+                continue
+            counterparty_id = mapping["counterparty_id"]
+            currency_id = connection.execute(
+                select(lines_table.c.currency_id)
+                .where(lines_table.c.document_id == mapping["id"])
+                .limit(1)
+            ).scalar_one_or_none()
+            result.append(
+                {
+                    "document_type": doc_name,
+                    "document_id": mapping["id"],
+                    "document_number": mapping["number"],
+                    "document_date": mapping["date"],
+                    "counterparty_name": counterparties.get(counterparty_id, counterparty_id),
+                    "amount_minor": amount_minor,
+                    "currency_id": currency_id,
+                    "due_date": mapping["date"],
+                }
+            )
+    result.sort(key=lambda row: (row["due_date"], row["document_type"], row["document_id"]))
+    return result
 
 
 def format_money_minor(amount_minor: int | Decimal, scale: int = 2) -> str:

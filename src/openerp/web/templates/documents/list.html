@@ -19,6 +19,51 @@
     </a>
   </div>
 
+  <form method="get" action="/documents/{{ document.name }}" class="flex flex-wrap items-end gap-3 bg-surface-card border border-surface-border rounded-xl p-4">
+    <label class="block">
+      <span class="text-xs font-medium text-slate-500">С</span>
+      <input type="date" name="date_from" value="{{ filters.date_from or '' }}"
+             class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm num">
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-slate-500">По</span>
+      <input type="date" name="date_to" value="{{ filters.date_to or '' }}"
+             class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm num">
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-slate-500">Статус</span>
+      <select name="status" class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm">
+        <option value="">Все</option>
+        <option value="draft" {% if filters.status == 'draft' %}selected{% endif %}>Черновик</option>
+        <option value="posted" {% if filters.status == 'posted' %}selected{% endif %}>Проведён</option>
+        <option value="cancelled" {% if filters.status == 'cancelled' %}selected{% endif %}>Отменён</option>
+      </select>
+    </label>
+    {% if filter_options.counterparty_id %}
+    <label class="block">
+      <span class="text-xs font-medium text-slate-500">Контрагент</span>
+      <select name="counterparty_id" class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm">
+        <option value="">Все</option>
+        {% for item in filter_options.counterparty_id %}
+        <option value="{{ item.id }}" {% if filters.counterparty_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    {% if filter_options.warehouse_id %}
+    <label class="block">
+      <span class="text-xs font-medium text-slate-500">Склад</span>
+      <select name="warehouse_id" class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm">
+        <option value="">Все</option>
+        {% for item in filter_options.warehouse_id %}
+        <option value="{{ item.id }}" {% if filters.warehouse_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <button type="submit" class="px-4 py-1.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg">Применить</button>
+  </form>
+
   <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
@@ -54,7 +99,7 @@
   <div id="document-load-more">
     {% if next_cursor %}
     <div class="text-center">
-      <button hx-get="/documents/{{ document.name }}?after_date={{ next_cursor.date }}&after_id={{ next_cursor.id }}"
+      <button hx-get="/documents/{{ document.name }}?{{ filter_query }}&after_date={{ next_cursor.date }}&after_id={{ next_cursor.id }}"
               hx-target="#document-rows" hx-swap="beforeend"
               class="px-4 py-2 text-sm border border-surface-border rounded-lg hover:bg-slate-50 transition-colors text-slate-600">
         Загрузить ещё

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Акт {{ document.number }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 32px; color: #1a1a1a; }
+    h1 { font-size: 22px; margin-bottom: 8px; }
+    .meta { margin-bottom: 24px; line-height: 1.6; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #f5f5f5; }
+    .signatures { margin-top: 48px; display: flex; justify-content: space-between; }
+    .signatures div { width: 40%; border-top: 1px solid #333; padding-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Акт выполненных работ № {{ document.number }}</h1>
+  <div class="meta">
+    <p>Дата: {{ document.date }}</p>
+    {% if document.counterparty_id %}<p>Контрагент: {{ document.counterparty_id }}</p>{% endif %}
+  </div>
+
+  {% if document.lines %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Наименование</th>
+        <th>Количество</th>
+        <th>Цена</th>
+        <th>Сумма</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in document.lines %}
+      <tr>
+        <td>{{ row.line_no }}</td>
+        <td>{{ row.product_id }}</td>
+        <td>{{ row.quantity }}</td>
+        <td>{{ row.price }}</td>
+        <td>{{ row.amount_minor }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <div class="signatures">
+    <div>Исполнитель</div>
+    <div>Заказчик</div>
+  </div>
+
+  <script>window.addEventListener("load", () => window.print());</script>
+</body>
+</html>

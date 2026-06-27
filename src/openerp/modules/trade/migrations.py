@@ -206,6 +206,32 @@ def add_money_accounts(connection: Connection) -> None:
     _recreate_cash_totals_index(connection)
 
 
+def _add_string_column(connection: Connection, table_name: str, column_name: str) -> None:
+    if column_name in _column_names(connection, table_name):
+        return
+    connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} VARCHAR(255)"))
+
+
+def add_trade_gaps_columns(connection: Connection) -> None:
+    _add_string_column(connection, "cat_product", "barcode")
+    for table_name, columns in (
+        ("doc_receipt", ("price_type_id", "based_on_document_id")),
+        ("doc_sale", ("price_type_id", "based_on_order_id")),
+        ("doc_order", ("price_type_id",)),
+        ("doc_purchase_order", ("price_type_id",)),
+        ("doc_sale_return", ("price_type_id",)),
+        ("doc_purchase_return", ("price_type_id",)),
+        ("doc_cash_payment", ("allocation_document_type", "allocation_document_id")),
+        ("doc_bank_payment", ("allocation_document_type", "allocation_document_id")),
+    ):
+        for column_name in columns:
+            if column_name == "allocation_document_type":
+                _add_string_column(connection, table_name, column_name)
+            else:
+                _add_integer_column(connection, table_name, column_name)
+
+
 trade_migrations = [
     ModuleMigration("trade", "20260622_add_money_accounts", add_money_accounts),
+    ModuleMigration("trade", "20260627_trade_gaps_columns", add_trade_gaps_columns),
 ]

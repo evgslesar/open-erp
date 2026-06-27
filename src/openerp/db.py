@@ -8,6 +8,14 @@ from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import Connection
 
 
+def _unicode_lower(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.casefold()
+    return value
+
+
 def create_db_engine(database_url: str) -> Engine:
     if database_url.startswith("sqlite:///"):
         db_path = Path(database_url.removeprefix("sqlite:///"))
@@ -19,6 +27,7 @@ def create_db_engine(database_url: str) -> Engine:
     if database_url.startswith("sqlite"):
         @event.listens_for(engine, "connect")
         def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+            dbapi_connection.create_function("unicode_lower", 1, _unicode_lower)
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA busy_timeout=5000")

@@ -246,6 +246,19 @@ class DocumentPostingService:
         ensure_period_open(self.connection, self.context, document_date)
 
 
+def get_closed_period(
+    connection: Connection,
+    context: RequestContext,
+) -> date | None:
+    table = connection.engine._openerp_metadata.tables["sys_closed_periods"]
+    row = connection.execute(
+        select(table.c.closed_until).where(table.c.organization_id == context.organization_id)
+    ).first()
+    if row is None:
+        return None
+    return row._mapping["closed_until"]
+
+
 def ensure_period_open(
     connection: Connection,
     context: RequestContext,

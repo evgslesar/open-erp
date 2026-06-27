@@ -188,7 +188,7 @@ def test_posting_sale_without_stock_returns_business_error(client):
     assert "не хватает" in response.text or "Недостаточно" in response.text
 
 
-def test_order_document_has_no_post_button(client):
+def test_order_document_has_post_button(client):
     test_client, master = client
     create = test_client.post(
         "/documents/order/new",
@@ -207,7 +207,7 @@ def test_order_document_has_no_post_button(client):
     document_url = create.headers["location"]
     view = test_client.get(document_url)
     assert view.status_code == 200
-    assert "Провести" not in view.text
+    assert "Провести" in view.text
 
 
 def test_transfer_form_shows_warehouse_dropdowns(client):

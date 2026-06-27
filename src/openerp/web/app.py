@@ -8,7 +8,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
 from markupsafe import Markup
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -30,8 +30,15 @@ from openerp.core.posting import (
     InsufficientFundsError,
     InsufficientStockError,
     InvalidPostingError,
+    get_closed_period,
+    set_closed_period,
 )
+from openerp.core.registers import RegisterService
 from openerp.core.repository import DocumentStateError, Repository
+from openerp.core.search import global_search
+from urllib.parse import urlencode
+
+from openerp.core.audit import list_audit_log, list_operation_log
 from openerp.core.security import (
     AuthenticationError,
     PermissionDenied,
@@ -161,6 +168,54 @@ def safe_redirect_path(next_path: str | None) -> str:
     if not next_path or not next_path.startswith("/") or next_path.startswith("//"):
         return "/"
     return next_path
+
+
+def document_filter_params(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    status: str | None = None,
+    counterparty_id: int | None = None,
+    warehouse_id: int | None = None,
+) -> dict:
+    params: dict = {}
+    if date_from:
+        params["date_from"] = date_from.isoformat()
+    if date_to:
+        params["date_to"] = date_to.isoformat()
+    if status:
+        params["status"] = status
+    if counterparty_id is not None:
+        params["counterparty_id"] = counterparty_id
+    if warehouse_id is not None:
+        params["warehouse_id"] = warehouse_id
+    return params
+
+
+def document_filter_query(**params) -> str:
+    cleaned = {key: value for key, value in params.items() if value not in (None, "")}
+    return urlencode(cleaned)
+
+
+def parse_based_on(value: str | None) -> tuple[str, int] | None:
+    if not value or "/" not in value:
+        return None
+    doc_type, doc_id_str = value.split("/", 1)
+    try:
+        return doc_type, int(doc_id_str)
+    except ValueError:
+        return None
+
+
+def serialize_row(row: dict) -> dict:
+    result = {}
+    for key, value in row.items():
+        if isinstance(value, date):
+            result[key] = value.isoformat()
+        elif hasattr(value, "isoformat"):
+            result[key] = value.isoformat()
+        else:
+            result[key] = value
+    return result
 
 
 def table_part_rows_for_form(document: dict, part: TablePartDef) -> list[dict]:
@@ -362,15 +417,16 @@ def create_app() -> FastAPI:
         request: Request,
         catalog_name: str,
         context: CurrentContext,
+        q: str = "",
     ):
         with transaction(engine) as connection:
             repository = Repository(connection, registry, context)
-            rows = repository.list_catalog_items(catalog_name)
+            rows = repository.list_catalog_items(catalog_name, q=q or None)
         catalog = catalog_by_name(registry, catalog_name)
         return templates.TemplateResponse(
             request,
             "catalogs/list.html",
-            {"catalog": catalog, "rows": rows, "context": context},
+            {"catalog": catalog, "rows": rows, "q": q, "context": context},
         )
 
     @app.get("/catalogs/{catalog_name}/new", response_class=HTMLResponse)
@@ -527,7 +583,16 @@ def create_app() -> FastAPI:
         after_date: date | None = None,
         after_id: int | None = None,
         limit: int = 50,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        status: str | None = None,
+        counterparty_id: int | None = None,
+        warehouse_id: int | None = None,
     ):
+        filters = document_filter_params(
+            date_from, date_to, status, counterparty_id, warehouse_id
+        )
+        filter_query = document_filter_query(**filters)
         with transaction(engine) as connection:
             repository = Repository(connection, registry, context)
             rows = repository.list_documents_keyset(
@@ -535,7 +600,23 @@ def create_app() -> FastAPI:
                 limit=limit,
                 after_date=after_date,
                 after_id=after_id,
+                date_from=date_from,
+                date_to=date_to,
+                status=status or None,
+                counterparty_id=counterparty_id,
+                warehouse_id=warehouse_id,
             )
+            filter_options: dict[str, list[dict]] = {}
+            document_def = registry.document(document_name)
+            field_names = {field.name for field in document_def.fields}
+            if "counterparty_id" in field_names:
+                filter_options["counterparty_id"] = reference_options(
+                    repository, registry, "counterparty_id"
+                ) or []
+            if "warehouse_id" in field_names:
+                filter_options["warehouse_id"] = reference_options(
+                    repository, registry, "warehouse_id"
+                ) or []
         document = registry.document(document_name)
         next_cursor = rows[-1] if len(rows) == limit else None
         is_hx = request.headers.get("HX-Request") == "true"
@@ -543,7 +624,15 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             request,
             template,
-            {"document": document, "rows": rows, "next_cursor": next_cursor, "context": context},
+            {
+                "document": document,
+                "rows": rows,
+                "next_cursor": next_cursor,
+                "filters": filters,
+                "filter_options": filter_options,
+                "filter_query": filter_query,
+                "context": context,
+            },
         )
 
     @app.get("/documents/{document_name}/new", response_class=HTMLResponse)
@@ -551,18 +640,32 @@ def create_app() -> FastAPI:
         request: Request,
         document_name: str,
         context: CurrentContext,
+        based_on: str | None = None,
     ):
         document_def = registry.document(document_name)
+        prefilled: dict = {}
         with transaction(engine) as connection:
             repository = Repository(connection, registry, context)
+            based = parse_based_on(based_on)
+            if based and document_name == "receipt":
+                source_type, source_id = based
+                if source_type == "purchase_order":
+                    source = repository.get_document(source_type, source_id)
+                    prefilled = {
+                        "counterparty_id": source.get("counterparty_id"),
+                        "warehouse_id": source.get("warehouse_id"),
+                        "price_type_id": source.get("price_type_id"),
+                        "based_on_document_id": source_id,
+                        "lines": source.get("lines", []),
+                    }
             references = _collect_reference_options(repository, registry, document_def)
         return templates.TemplateResponse(
             request,
             "documents/form.html",
             {
                 "document_def": document_def,
-                "document": {},
-                "form_table_rows": table_parts_for_form(document_def, {}),
+                "document": prefilled,
+                "form_table_rows": table_parts_for_form(document_def, prefilled),
                 "action": f"/documents/{document_name}/new",
                 "references": references,
                 "context": context,
@@ -699,13 +802,21 @@ def create_app() -> FastAPI:
         document_name: str,
         document_id: int,
         context: CurrentContext,
+        form: str | None = None,
     ):
         with transaction(engine) as connection:
             repository = Repository(connection, registry, context)
             document = repository.get_document(document_name, document_id)
+        template_name = "documents/print_form.html"
+        if form:
+            for module in registry.modules.values():
+                for print_form in module.print_forms:
+                    if print_form.name == form and print_form.document == document_name:
+                        template_name = print_form.template
+                        break
         return templates.TemplateResponse(
             request,
-            "documents/print_form.html",
+            template_name,
             {"document_name": document_name, "document": document, "context": context},
         )
 
@@ -741,6 +852,194 @@ def create_app() -> FastAPI:
                 "context": context,
             },
         )
+
+    @app.get("/search", response_class=HTMLResponse)
+    def search_page(request: Request, context: CurrentContext, q: str = ""):
+        q = q.strip()
+        if not q:
+            return RedirectResponse("/", status_code=303)
+        with transaction(engine) as connection:
+            data = global_search(connection, registry, context, q)
+        return templates.TemplateResponse(
+            request,
+            "search.html",
+            {
+                "query": data["query"],
+                "groups": data["groups"],
+                "total": data["total"],
+                "context": context,
+            },
+        )
+
+    @app.get("/api/search")
+    def api_search(context: CurrentContext, q: str = "", limit: int = 10):
+        limit = min(max(limit, 1), 50)
+        with transaction(engine) as connection:
+            data = global_search(connection, registry, context, q, limit=limit)
+        flat = []
+        for group in data["groups"]:
+            for item in group["results"]:
+                flat.append({
+                    "type": item["type"],
+                    "id": item["id"],
+                    "group_key": group["group_key"],
+                    "title": item["title"],
+                    "subtitle": item.get("subtitle", ""),
+                    "group_label": group["group_label"],
+                    "group_url": group["group_url"],
+                    "url": item["url"],
+                })
+        return JSONResponse({"query": data["query"], "results": flat, "total": data["total"]})
+
+    @app.get("/settings/closed-period", response_class=HTMLResponse)
+    def closed_period_form(request: Request, context: CurrentContext):
+        if not context.is_admin:
+            raise PermissionDenied("Only admins can manage closed period")
+        with transaction(engine) as connection:
+            closed_until = get_closed_period(connection, context)
+        return templates.TemplateResponse(
+            request,
+            "settings/closed_period.html",
+            {"closed_until": closed_until, "context": context},
+        )
+
+    @app.post("/settings/closed-period")
+    async def closed_period_save(request: Request, context: CurrentContext):
+        if not context.is_admin:
+            raise PermissionDenied("Only admins can manage closed period")
+        form = dict(await request.form())
+        closed_until = date.fromisoformat(form["closed_until"])
+        with transaction(engine) as connection:
+            set_closed_period(connection, context, closed_until)
+        return RedirectResponse("/settings/closed-period", status_code=303)
+
+    @app.get("/audit", response_class=HTMLResponse)
+    def audit_list(
+        request: Request,
+        context: CurrentContext,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        operation: str = "",
+    ):
+        if not context.is_admin:
+            raise PermissionDenied("Only admins can view audit log")
+        with transaction(engine) as connection:
+            rows = list_audit_log(
+                connection,
+                context,
+                date_from=date_from,
+                date_to=date_to,
+                operation=operation or None,
+            )
+        return templates.TemplateResponse(
+            request,
+            "audit/list.html",
+            {
+                "rows": rows,
+                "date_from": date_from,
+                "date_to": date_to,
+                "operation": operation,
+                "context": context,
+            },
+        )
+
+    @app.get("/operations", response_class=HTMLResponse)
+    def operations_list(
+        request: Request,
+        context: CurrentContext,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        operation: str = "",
+    ):
+        if not context.is_admin:
+            raise PermissionDenied("Only admins can view operation log")
+        with transaction(engine) as connection:
+            rows = list_operation_log(
+                connection,
+                context,
+                date_from=date_from,
+                date_to=date_to,
+                operation=operation or None,
+            )
+        return templates.TemplateResponse(
+            request,
+            "operations/list.html",
+            {
+                "rows": rows,
+                "date_from": date_from,
+                "date_to": date_to,
+                "operation": operation,
+                "context": context,
+            },
+        )
+
+    @app.get("/api/price")
+    def api_price(
+        context: CurrentContext,
+        product_id: int,
+        price_type_id: int | None = None,
+        on_date: date | None = None,
+    ):
+        with transaction(engine) as connection:
+            registers = RegisterService(connection, registry, context)
+            filters: dict = {"product_id": product_id}
+            if price_type_id is not None:
+                filters["price_type_id"] = price_type_id
+            rows = registers.slice_last("prices", on_date or date.today(), filters=filters)
+        if not rows:
+            return JSONResponse({"price": None, "currency_id": None})
+        row = rows[0]
+        return JSONResponse({"price": row["price"], "currency_id": row["currency_id"]})
+
+    @app.get("/api/v1/catalogs/{catalog_name}")
+    def api_catalog_list(
+        catalog_name: str,
+        context: CurrentContext,
+        q: str = "",
+        limit: int = 100,
+    ):
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            rows = repository.list_catalog_items(catalog_name, limit=limit, q=q or None)
+        return JSONResponse({"items": [serialize_row(row) for row in rows]})
+
+    @app.get("/api/v1/catalogs/{catalog_name}/{item_id}")
+    def api_catalog_get(catalog_name: str, item_id: int, context: CurrentContext):
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            item = repository.get_catalog_item(catalog_name, item_id)
+        return JSONResponse(serialize_row(item))
+
+    @app.get("/api/v1/documents/{document_name}")
+    def api_document_list(
+        document_name: str,
+        context: CurrentContext,
+        limit: int = 50,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        status: str | None = None,
+        counterparty_id: int | None = None,
+        warehouse_id: int | None = None,
+    ):
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            rows = repository.list_documents_keyset(
+                document_name,
+                limit=limit,
+                date_from=date_from,
+                date_to=date_to,
+                status=status,
+                counterparty_id=counterparty_id,
+                warehouse_id=warehouse_id,
+            )
+        return JSONResponse({"items": [serialize_row(row) for row in rows]})
+
+    @app.get("/api/v1/documents/{document_name}/{document_id}")
+    def api_document_get(document_name: str, document_id: int, context: CurrentContext):
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            document = repository.get_document(document_name, document_id)
+        return JSONResponse(serialize_row(document))
 
     @app.get("/reports/{report_name}/export")
     def report_export(

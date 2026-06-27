@@ -26,6 +26,15 @@
     </div>
   </div>
 
+  <form method="get" action="/catalogs/{{ catalog.name }}" class="flex flex-wrap items-end gap-3 bg-surface-card border border-surface-border rounded-xl p-4">
+    <label class="block flex-1 min-w-[200px]">
+      <span class="text-xs font-medium text-slate-500">Поиск по наименованию</span>
+      <input type="search" name="q" value="{{ q or '' }}" placeholder="Наименование..."
+             class="mt-0.5 w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm">
+    </label>
+    <button type="submit" class="px-4 py-1.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg">Найти</button>
+  </form>
+
   <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm">

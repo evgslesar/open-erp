@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 
 from sqlalchemy.engine import Connection
@@ -59,3 +60,57 @@ def log_operation(
 
 def _table(connection: Connection, name: str):
     return connection.engine._openerp_metadata.tables[name]
+
+
+def list_audit_log(
+    connection: Connection,
+    context: RequestContext,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    operation: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    from sqlalchemy import and_, desc, select
+
+    table = _table(connection, "sys_audit_log")
+    conditions = [table.c.organization_id == context.organization_id]
+    if date_from is not None:
+        conditions.append(table.c.occurred_at >= date_from)
+    if date_to is not None:
+        conditions.append(table.c.occurred_at <= date_to)
+    if operation:
+        conditions.append(table.c.operation == operation)
+    query = (
+        select(table)
+        .where(and_(*conditions))
+        .order_by(desc(table.c.occurred_at), desc(table.c.id))
+        .limit(limit)
+    )
+    return [dict(row._mapping) for row in connection.execute(query)]
+
+
+def list_operation_log(
+    connection: Connection,
+    context: RequestContext,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    operation: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    from sqlalchemy import and_, desc, select
+
+    table = _table(connection, "sys_operation_log")
+    conditions = [table.c.organization_id == context.organization_id]
+    if date_from is not None:
+        conditions.append(table.c.occurred_at >= date_from)
+    if date_to is not None:
+        conditions.append(table.c.occurred_at <= date_to)
+    if operation:
+        conditions.append(table.c.operation == operation)
+    query = (
+        select(table)
+        .where(and_(*conditions))
+        .order_by(desc(table.c.occurred_at), desc(table.c.id))
+        .limit(limit)
+    )
+    return [dict(row._mapping) for row in connection.execute(query)]

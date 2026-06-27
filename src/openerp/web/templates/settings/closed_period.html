@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% set active_section = 'settings_closed_period' %}
+
+{% block content %}
+<div class="space-y-4 max-w-lg">
+  <div>
+    <nav class="text-xs text-slate-400 mb-1">
+      <a href="/" class="hover:text-primary">Главная</a>
+      <span class="mx-1">/</span>
+      <span>Настройки</span>
+    </nav>
+    <h1 class="text-xl font-semibold text-primary-dark">Закрытый период</h1>
+    <p class="text-sm text-slate-500 mt-1">Документы с датой не позже указанной даты нельзя создавать, изменять или проводить.</p>
+  </div>
+
+  {% if closed_until %}
+  <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+    Текущий закрытый период: до <strong class="num">{{ closed_until }}</strong> включительно.
+  </div>
+  {% else %}
+  <div class="bg-slate-50 border border-surface-border rounded-xl px-4 py-3 text-sm text-slate-600">
+    Закрытый период не установлен.
+  </div>
+  {% endif %}
+
+  <form method="post" action="/settings/closed-period" class="bg-surface-card border border-surface-border rounded-xl p-4 space-y-4">
+    <label class="block">
+      <span class="text-xs font-medium text-slate-500">Закрыть период до даты (включительно)</span>
+      <input type="date" name="closed_until" value="{{ closed_until or '' }}" required
+             class="mt-0.5 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num">
+    </label>
+    <button type="submit" class="px-4 py-2 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg">
+      Сохранить
+    </button>
+  </form>
+</div>
+{% endblock %}

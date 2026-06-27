@@ -339,10 +339,33 @@ class RegisterService:
         dimensions = None
         if register_name == "cash":
             dimensions = ["money_account_id", "currency_id"]
+        if register_name == "stock":
+            self._assert_stock_available(on_date)
+            return
         for row in self.balance(register_name, on_date, dimensions=dimensions):
             for resource in register.resources:
                 if row[resource.name] < 0:
                     raise NegativeStockBalanceError(register_name, dict(row))
+
+    def _assert_stock_available(self, on_date: date) -> None:
+        stock_rows = self.balance("stock", on_date)
+        reserved_rows = self.balance("stock_reserved", on_date)
+        reserved_map: dict[tuple[Any, ...], Decimal] = {}
+        for row in reserved_rows:
+            key = (row["warehouse_id"], row["product_id"])
+            reserved_map[key] = to_decimal(row["quantity"])
+        for row in stock_rows:
+            key = (row["warehouse_id"], row["product_id"])
+            stock_qty = to_decimal(row["quantity"])
+            reserved_qty = reserved_map.get(key, Decimal("0"))
+            available = stock_qty - reserved_qty
+            if available < 0:
+                error_row = dict(row)
+                error_row["quantity"] = available
+                raise NegativeStockBalanceError("stock", error_row)
+        for row in self.balance("stock_reserved", on_date):
+            if to_decimal(row["quantity"]) < 0:
+                raise NegativeStockBalanceError("stock_reserved", dict(row))
 
     def verify_totals(self, register_name: str) -> list[dict[str, Any]]:
         register = self.registry.accumulation_register(register_name)

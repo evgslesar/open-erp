@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% set active_section = 'operations' %}
+
+{% block content %}
+<div class="space-y-4">
+  <div>
+    <nav class="text-xs text-slate-400 mb-1">
+      <a href="/" class="hover:text-primary">Главная</a>
+      <span class="mx-1">/</span>
+      <span>Операции</span>
+    </nav>
+    <h1 class="text-xl font-semibold text-primary-dark">Журнал операций</h1>
+  </div>
+
+  <form method="get" action="/operations" class="flex flex-wrap items-end gap-3 bg-surface-card border border-surface-border rounded-xl p-4">
+    <label class="block">
+      <span class="text-xs font-medium text-slate-500">С</span>
+      <input type="date" name="date_from" value="{{ date_from or '' }}" class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm num">
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-slate-500">По</span>
+      <input type="date" name="date_to" value="{{ date_to or '' }}" class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm num">
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-slate-500">Операция</span>
+      <input type="text" name="operation" value="{{ operation or '' }}" placeholder="posted, set_closed_period..."
+             class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm">
+    </label>
+    <button type="submit" class="px-4 py-1.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg">Применить</button>
+  </form>
+
+  <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-slate-50 border-b border-surface-border text-left">
+            <th class="px-4 py-3 font-medium text-slate-500">Время</th>
+            <th class="px-4 py-3 font-medium text-slate-500">Операция</th>
+            <th class="px-4 py-3 font-medium text-slate-500">Объект</th>
+            <th class="px-4 py-3 font-medium text-slate-500">ID</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-surface-border">
+          {% for row in rows %}
+          <tr class="hover:bg-slate-50">
+            <td class="px-4 py-3 text-slate-600 num">{{ row.occurred_at }}</td>
+            <td class="px-4 py-3 text-slate-700">{{ row.operation }}</td>
+            <td class="px-4 py-3 text-slate-600">{{ row.object_type or '' }}</td>
+            <td class="px-4 py-3 text-slate-400 num">{{ row.object_id or '' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="px-4 py-8 text-center text-slate-400">Нет записей</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

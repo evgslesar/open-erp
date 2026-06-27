@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Поиск: {{ query }} — Open ERP{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold text-primary-dark">Результаты поиска</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        {% if total == 0 %}
+        По запросу «{{ query }}» ничего не найдено.
+        {% elif total == 1 %}
+        1 результат по запросу «{{ query }}».
+        {% else %}
+        {{ total }} результатов по запросу «{{ query }}».
+        {% endif %}
+      </p>
+    </div>
+    <form method="get" action="/search" class="w-full sm:max-w-md">
+      <div class="relative">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
+        </svg>
+        <input type="search" name="q" value="{{ query }}" autofocus
+               placeholder="Уточнить поиск..."
+               class="w-full pl-9 pr-4 py-2 text-sm border border-surface-border rounded-lg focus:outline-none focus:border-primary bg-white">
+      </div>
+    </form>
+  </div>
+
+  {% if groups %}
+  <div class="space-y-6">
+    {% for group in groups %}
+    <section class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
+      <div class="px-4 py-3 bg-slate-50 border-b border-surface-border flex items-center justify-between">
+        <a href="{{ group.group_url }}" class="font-medium text-primary-dark hover:text-primary">{{ group.group_label }}</a>
+        <span class="text-xs text-slate-400 num">{{ group.results | length }}</span>
+      </div>
+      <ul class="divide-y divide-surface-border">
+        {% for item in group.results %}
+        <li>
+          <a href="{{ item.url }}" class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+            <span class="shrink-0 mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center text-xs font-medium
+              {% if item.type == 'catalog' %}bg-primary/10 text-primary
+              {% else %}bg-emerald-50 text-emerald-600{% endif %}">
+              {% if item.type == 'catalog' %}С
+              {% else %}Д{% endif %}
+            </span>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-slate-700 truncate">{{ item.title }}</p>
+              {% if item.subtitle %}
+              <p class="text-xs text-slate-400 mt-0.5 truncate">{{ item.subtitle }}</p>
+              {% endif %}
+            </div>
+            <span class="text-xs text-slate-300 capitalize shrink-0">
+              {% if item.type == 'catalog' %}справочник{% else %}документ{% endif %}
+            </span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

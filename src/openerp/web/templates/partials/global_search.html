@@ -1,0 +1,62 @@
+<div x-show="panelOpen"
+     x-cloak
+     x-transition:enter="transition ease-out duration-150"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-100"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     class="fixed inset-0 z-[60]"
+     @keydown.escape.window="closePanel()">
+  <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="closePanel()"></div>
+
+  <div class="relative max-w-xl mx-auto mt-[12vh] px-4 sm:px-6" @click.stop>
+    <form method="get" action="/search" @submit="if (!query.trim()) $event.preventDefault()">
+      <div class="flex items-center gap-2 bg-white border border-surface-border rounded-xl shadow-xl p-2">
+        <div class="relative flex-1 min-w-0">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
+          </svg>
+          <input type="search" name="q" x-model="query" x-ref="searchInput"
+                 @input.debounce.300ms="fetchResults()"
+                 @focus="open = true; if (query.trim()) fetchResults()"
+                 @keydown.escape.prevent="closePanel()"
+                 placeholder="Поиск по справочникам и документам..."
+                 class="w-full pl-9 pr-3 py-2.5 text-sm border border-surface-border rounded-lg focus:outline-none focus:border-primary bg-white">
+        </div>
+        <button type="button" @click="closePanel()"
+                class="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
+                aria-label="Закрыть поиск">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    </form>
+
+    <div x-show="open && (loading || results.length > 0 || (query.trim() && !loading))"
+         x-cloak
+         class="mt-2 bg-white border border-surface-border rounded-xl shadow-xl overflow-hidden max-h-[50vh] overflow-y-auto">
+      <template x-if="loading">
+        <div class="px-4 py-3 text-sm text-slate-400">Поиск...</div>
+      </template>
+      <template x-if="!loading && query.trim() && results.length === 0">
+        <div class="px-4 py-3 text-sm text-slate-400">Ничего не найдено.</div>
+      </template>
+      <template x-for="item in results" :key="item.group_key + '-' + item.id">
+        <a :href="item.url" @click="closePanel()"
+           class="flex items-start gap-2.5 px-4 py-2.5 hover:bg-slate-50 border-b border-surface-border last:border-0">
+          <span class="shrink-0 text-xs text-slate-400 uppercase w-16 pt-0.5" x-text="item.type === 'catalog' ? 'справ.' : 'док.'"></span>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium text-slate-700 truncate" x-text="item.title"></p>
+            <p class="text-xs text-slate-400 truncate" x-text="item.group_label + (item.subtitle ? ' · ' + item.subtitle : '')"></p>
+          </div>
+        </a>
+      </template>
+      <a x-show="query.trim() && results.length > 0" :href="'/search?q=' + encodeURIComponent(query)"
+         class="block px-4 py-2 text-xs text-center text-primary hover:bg-slate-50 font-medium">
+        Все результаты
+      </a>
+    </div>
+  </div>
+</div>
