@@ -47,7 +47,7 @@ def test_dashboard_summary_returns_balances(tmp_path):
         seed_demo(connection, registry)
         summary = dashboard_summary(connection, registry, context, on_date=date.today())
 
-    assert summary["cash_total_minor"] == 550000
+    assert summary["cash_total_minor"] == 1570000
     assert summary["stock_positions"] > 0
     assert len(summary["cash_accounts"]) == 2
     assert summary["cash_chart"]["labels"]

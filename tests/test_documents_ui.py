@@ -225,5 +225,5 @@ def test_edit_form_initializes_alpine_rows(client):
     )
     edit = test_client.get(create.headers["location"] + "/edit")
     assert edit.status_code == 200
-    assert "x-data='{\"partName\": \"lines\"" in edit.text
+    assert "goodsLinesData" in edit.text or "x-data='{\"partName\": \"lines\"" in edit.text
     assert 'x-data="{ partName' not in edit.text

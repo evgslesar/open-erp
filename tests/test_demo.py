@@ -21,8 +21,8 @@ def test_seed_demo_creates_cash_balances(tmp_path):
         rows = cash_report(connection, registry, context, on_date=date.today())
 
     balances = {row["money_account_name"]: row["amount_minor"] for row in rows}
-    assert balances["Основная касса"] == 55000
-    assert balances["Расчётный счёт"] == 495000
+    assert balances["Основная касса"] == 275000
+    assert balances["Расчётный счёт"] == 1295000
 
 
 def test_seed_demo_adds_cash_to_existing_trade_database(tmp_path):
@@ -72,8 +72,8 @@ def test_seed_demo_adds_cash_to_existing_trade_database(tmp_path):
         rows = cash_report(connection, registry, context, on_date=date.today())
 
     balances = {row["money_account_name"]: row["amount_minor"] for row in rows}
-    assert balances["Основная касса"] == 55000
-    assert balances["Расчётный счёт"] == 495000
+    assert balances["Основная касса"] == 275000
+    assert balances["Расчётный счёт"] == 1295000
 
 
 def test_seed_demo_does_not_duplicate_cash_payments(tmp_path):
@@ -88,5 +88,5 @@ def test_seed_demo_does_not_duplicate_cash_payments(tmp_path):
 
     assert len(rows) == 2
     balances = {row["money_account_name"]: row["amount_minor"] for row in rows}
-    assert balances["Основная касса"] == 55000
-    assert balances["Расчётный счёт"] == 495000
+    assert balances["Основная касса"] == 275000
+    assert balances["Расчётный счёт"] == 1295000

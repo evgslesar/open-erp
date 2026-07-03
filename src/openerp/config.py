@@ -12,13 +12,17 @@ class Settings:
     app_name: str = "Open ERP"
     data_dir: Path = Path("data")
     backup_dir: Path = Path("backups")
+    locales_dir: Path = Path("locales")
     secret_key: str = ""
+    default_locale: str = "ru"
+    available_locales: tuple[str, ...] = ("ru", "en")
 
 
 def get_settings() -> Settings:
     database_url = os.getenv("OPENERP_DATABASE_URL", "sqlite:///data/open_erp.db")
     secret_key = os.getenv("OPENERP_SECRET_KEY") or _read_or_create_secret_key()
-    return Settings(database_url=database_url, secret_key=secret_key)
+    default_locale = os.getenv("OPENERP_DEFAULT_LOCALE", "ru")
+    return Settings(database_url=database_url, secret_key=secret_key, default_locale=default_locale)
 
 
 def _read_or_create_secret_key() -> str:

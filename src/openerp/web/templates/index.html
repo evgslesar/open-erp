@@ -5,68 +5,68 @@
 <div class="space-y-6">
   <div class="flex flex-wrap items-end justify-between gap-3">
     <div>
-      <h1 class="text-2xl font-semibold text-primary-dark">Управленческий учёт</h1>
-      <p class="text-sm text-slate-500 mt-1">Сводка на {{ dashboard.on_date.strftime('%d.%m.%Y') }}</p>
+      <h1 class="text-2xl font-semibold text-primary-dark">{{ _('Управленческий учёт') }}</h1>
+      <p class="text-sm text-slate-500 mt-1">{{ _('Сводка на') }} {{ dashboard.on_date.strftime('%d.%m.%Y') }}</p>
     </div>
     <a href="/reports/cash?on_date={{ dashboard.on_date.isoformat() }}"
        class="text-sm text-primary hover:text-primary-dark font-medium">
-      Подробный отчёт по деньгам →
+      {{ _('Подробный отчёт по деньгам →') }}
     </a>
   </div>
 
   {# KPI cards #}
   <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
     <div class="bg-surface-card border border-surface-border rounded-xl p-5">
-      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">Денежные средства</div>
+      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">{{ _('Денежные средства') }}</div>
       <div class="mt-2 text-2xl font-semibold text-primary-dark num">{{ dashboard.cash_total_minor | money }} ₽</div>
-      <div class="mt-1 text-xs text-slate-500">{{ dashboard.cash_accounts | length }} счет(ов)</div>
+      <div class="mt-1 text-xs text-slate-500">{{ dashboard.cash_accounts | length }} {{ _('счет(ов)') }}</div>
     </div>
     <div class="bg-surface-card border border-surface-border rounded-xl p-5">
-      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">Продажи с начала месяца</div>
+      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">{{ _('Продажи с начала месяца') }}</div>
       <div class="mt-2 text-2xl font-semibold text-primary-dark num">{{ dashboard.sales_month_minor | money }} ₽</div>
       <a href="/reports/sales?date_from={{ dashboard.on_date.replace(day=1).isoformat() }}&date_to={{ dashboard.on_date.isoformat() }}"
-         class="mt-1 inline-block text-xs text-primary hover:text-primary-dark">Отчёт по продажам →</a>
+         class="mt-1 inline-block text-xs text-primary hover:text-primary-dark">{{ _('Отчёт по продажам →') }}</a>
     </div>
     <div class="bg-surface-card border border-surface-border rounded-xl p-5">
-      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">Нам должны</div>
+      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">{{ _('Нам должны') }}</div>
       <div class="mt-2 text-2xl font-semibold text-emerald-700 num">{{ dashboard.receivable_minor | money }} ₽</div>
       <a href="/reports/settlements?on_date={{ dashboard.on_date.isoformat() }}"
-         class="mt-1 inline-block text-xs text-primary hover:text-primary-dark">Взаиморасчёты →</a>
+         class="mt-1 inline-block text-xs text-primary hover:text-primary-dark">{{ _('Взаиморасчёты →') }}</a>
     </div>
     <div class="bg-surface-card border border-surface-border rounded-xl p-5">
-      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">Мы должны</div>
+      <div class="text-xs font-medium uppercase tracking-wider text-slate-400">{{ _('Мы должны') }}</div>
       <div class="mt-2 text-2xl font-semibold text-rose-700 num">{{ dashboard.payable_minor | money }} ₽</div>
-      <div class="mt-1 text-xs text-slate-500">{{ dashboard.stock_positions }} позиций на складах</div>
+      <div class="mt-1 text-xs text-slate-500">{{ dashboard.stock_positions }} {{ _('позиций на складах') }}</div>
     </div>
   </div>
 
   {# Charts #}
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
     <div class="bg-surface-card border border-surface-border rounded-xl p-5">
-      <h2 class="text-sm font-semibold text-slate-700 mb-4">Остатки по денежным счетам</h2>
+      <h2 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Остатки по денежным счетам') }}</h2>
       {% if dashboard.cash_chart.labels %}
       <div class="h-64">
         <canvas id="cashChart"></canvas>
       </div>
       {% else %}
-      <p class="text-sm text-slate-400 py-10 text-center">Нет движений по деньгам. Оформите кассовый или банковский платёж.</p>
+      <p class="text-sm text-slate-400 py-10 text-center">{{ _('Нет движений по деньгам. Оформите кассовый или банковский платёж.') }}</p>
       {% endif %}
     </div>
     <div class="bg-surface-card border border-surface-border rounded-xl p-5">
-      <h2 class="text-sm font-semibold text-slate-700 mb-4">Товары на складах</h2>
+      <h2 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Товары на складах') }}</h2>
       {% if dashboard.stock_chart.labels %}
       <div class="h-64">
         <canvas id="stockChart"></canvas>
       </div>
       {% else %}
-      <p class="text-sm text-slate-400 py-10 text-center">Склад пуст. Оформите поступление товаров.</p>
+      <p class="text-sm text-slate-400 py-10 text-center">{{ _('Склад пуст. Оформите поступление товаров.') }}</p>
       {% endif %}
     </div>
   </div>
 
   {% if dashboard.sales_chart.labels %}
   <div class="bg-surface-card border border-surface-border rounded-xl p-5">
-    <h2 class="text-sm font-semibold text-slate-700 mb-4">Продажи за месяц по товарам</h2>
+    <h2 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Продажи за месяц по товарам') }}</h2>
     <div class="h-56">
       <canvas id="salesChart"></canvas>
     </div>
@@ -77,7 +77,7 @@
   <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
     <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
       <div class="px-4 py-3 border-b border-surface-border">
-        <h2 class="text-sm font-semibold text-slate-700">Денежные счета</h2>
+        <h2 class="text-sm font-semibold text-slate-700">{{ _('Денежные счета') }}</h2>
       </div>
       <table class="w-full text-sm">
         <tbody class="divide-y divide-surface-border">
@@ -87,7 +87,7 @@
             <td class="px-4 py-2.5 text-right num text-slate-600">{{ row.amount_minor | money }} ₽</td>
           </tr>
           {% else %}
-          <tr><td class="px-4 py-8 text-center text-slate-400" colspan="2">Нет остатков</td></tr>
+          <tr><td class="px-4 py-8 text-center text-slate-400" colspan="2">{{ _('Нет остатков') }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -95,7 +95,7 @@
 
     <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
       <div class="px-4 py-3 border-b border-surface-border">
-        <h2 class="text-sm font-semibold text-slate-700">Топ остатков товаров</h2>
+        <h2 class="text-sm font-semibold text-slate-700">{{ _('Топ остатков товаров') }}</h2>
       </div>
       <table class="w-full text-sm">
         <tbody class="divide-y divide-surface-border">
@@ -105,7 +105,7 @@
             <td class="px-4 py-2.5 text-right num text-slate-600">{{ row.quantity }}</td>
           </tr>
           {% else %}
-          <tr><td class="px-4 py-8 text-center text-slate-400" colspan="2">Нет остатков</td></tr>
+          <tr><td class="px-4 py-8 text-center text-slate-400" colspan="2">{{ _('Нет остатков') }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -113,7 +113,7 @@
 
     <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
       <div class="px-4 py-3 border-b border-surface-border">
-        <h2 class="text-sm font-semibold text-slate-700">Взаиморасчёты</h2>
+        <h2 class="text-sm font-semibold text-slate-700">{{ _('Взаиморасчёты') }}</h2>
       </div>
       <table class="w-full text-sm">
         <tbody class="divide-y divide-surface-border">
@@ -125,7 +125,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td class="px-4 py-8 text-center text-slate-400" colspan="2">Нет задолженностей</td></tr>
+          <tr><td class="px-4 py-8 text-center text-slate-400" colspan="2">{{ _('Нет задолженностей') }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -134,7 +134,7 @@
 
   {# Quick actions #}
   <div>
-    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">Быстрые действия</h2>
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">{{ _('Быстрые действия') }}</h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {% for document in documents[:4] %}
       <a href="/documents/{{ document.name }}/new"
@@ -144,8 +144,8 @@
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
           </div>
           <div>
-            <div class="text-sm font-medium text-slate-700 group-hover:text-primary">{{ document.label }}</div>
-            <div class="text-xs text-slate-400">Создать</div>
+            <div class="text-sm font-medium text-slate-700 group-hover:text-primary">{{ _(document.label) }}</div>
+            <div class="text-xs text-slate-400">{{ _('Создать') }}</div>
           </div>
         </div>
       </a>
@@ -155,12 +155,12 @@
 
   {# Catalogs #}
   <section>
-    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">Справочники</h2>
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">{{ _('Справочники') }}</h2>
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
       {% for catalog in catalogs %}
       <a href="/catalogs/{{ catalog.name }}"
          class="flex items-center justify-between bg-surface-card border border-surface-border rounded-lg px-4 py-3 hover:border-primary transition-colors cursor-pointer">
-        <span class="text-sm font-medium text-slate-700">{{ catalog.label }}</span>
+        <span class="text-sm font-medium text-slate-700">{{ _(catalog.label) }}</span>
         <svg class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
       </a>
       {% endfor %}
@@ -169,13 +169,13 @@
 
   {# Reports #}
   <section>
-    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">Отчёты</h2>
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">{{ _('Отчёты') }}</h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {% for report in reports %}
       <a href="/reports/{{ report.name }}"
          class="flex items-center gap-3 bg-surface-card border border-surface-border rounded-lg px-4 py-3 hover:border-primary transition-colors cursor-pointer">
         <svg class="w-5 h-5 text-primary/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625C9.75 8.004 10.254 7.5 10.875 7.5h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
-        <span class="text-sm font-medium text-slate-700 flex-1">{{ report.label }}</span>
+        <span class="text-sm font-medium text-slate-700 flex-1">{{ _(report.label) }}</span>
         <svg class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
       </a>
       {% endfor %}
@@ -186,6 +186,7 @@
 {% if dashboard.cash_chart.labels or dashboard.stock_chart.labels or dashboard.sales_chart.labels %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
+  const chartLocale = '{{ "ru-RU" if locale == "ru" else "en-US" }}';
   const chartDefaults = {
     responsive: true,
     maintainAspectRatio: false,
@@ -208,7 +209,7 @@
       scales: {
         y: {
           ticks: {
-            callback: (value) => value.toLocaleString('ru-RU') + ' ₽',
+            callback: (value) => value.toLocaleString(chartLocale) + ' ₽',
           },
         },
       },
@@ -251,7 +252,7 @@
       scales: {
         x: {
           ticks: {
-            callback: (value) => value.toLocaleString('ru-RU') + ' ₽',
+            callback: (value) => value.toLocaleString(chartLocale) + ' ₽',
           },
         },
       },

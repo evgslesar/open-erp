@@ -378,6 +378,8 @@ trade_module = ModuleDef(
         ReportDef("cash", "Денежные средства", "trade.cash_report"),
         ReportDef("turnover", "Оборотно-сальдовая ведомость", "trade.turnover_report"),
         ReportDef("payment_calendar", "Платежный календарь", "trade.payment_calendar_report"),
+        ReportDef("unpaid_documents", "Неоплаченные документы", "trade.unpaid_documents_report"),
+        ReportDef("reconciliation", "Акт сверки", "trade.reconciliation_report"),
     ),
     print_forms=(
         PrintFormDef("receipt_html", "Поступление HTML", "receipt", "documents/print_form.html"),

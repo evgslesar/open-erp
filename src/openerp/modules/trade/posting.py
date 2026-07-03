@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from openerp.core.decimal import to_decimal
 from openerp.core.naming import catalog_table, document_table
+from openerp.modules.trade.settlements import unpaid_balance
 from openerp.core.posting import InvalidPostingError, PostingContext
 from openerp.core.registers import RegisterService
 from openerp.core.repository import Repository
@@ -291,6 +292,30 @@ def _validate_allocation(context: PostingContext) -> None:
     ).first()
     if row is None:
         raise InvalidPostingError(f"Документ {doc_type}/{doc_id} не найден")
+    base_doc = context.connection.execute(
+        select(table).where(table.c.id == doc_id)
+    ).first()
+    if base_doc is None:
+        raise InvalidPostingError(f"Документ {doc_type}/{doc_id} не найден")
+    base_mapping = dict(base_doc._mapping)
+    if base_mapping.get("status") != "posted":
+        raise InvalidPostingError("Документ-основание должен быть проведён")
+    payment_counterparty = document.get("counterparty_id")
+    base_counterparty = base_mapping.get("counterparty_id")
+    if payment_counterparty != base_counterparty:
+        raise InvalidPostingError("Контрагент платежа не совпадает с документом-основанием")
+    payment_amount = int(document.get("amount_minor") or 0)
+    remaining = unpaid_balance(
+        context.connection,
+        context.context.organization_id,
+        doc_type,
+        doc_id,
+        exclude_payment_id=int(document["id"]) if document.get("id") else None,
+    )
+    if payment_amount > remaining:
+        raise InvalidPostingError(
+            f"Сумма платежа превышает неоплаченный остаток документа ({remaining} коп.)"
+        )
 
 
 def _ensure_money_account(

@@ -1,0 +1,701 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: Open ERP 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en\n"
+
+msgid " от "
+msgstr " of "
+
+msgid "%(total)s результатов по запросу «%(query)s»."
+msgstr "%(total)s results found for “%(query)s”."
+
+msgid "1 результат по запросу «%(query)s»."
+msgstr "1 result found for “%(query)s”."
+
+msgid "amount_minor"
+msgstr "Amount"
+
+msgid "available_quantity"
+msgstr "Available"
+
+msgid "closing_balance"
+msgstr "Closing balance"
+
+msgid "counterparty_name"
+msgstr "Counterparty"
+
+msgid "description"
+msgstr "Description"
+
+msgid "document"
+msgstr "Document"
+
+msgid "document_date"
+msgstr "Document date"
+
+msgid "document_number"
+msgstr "Document number"
+
+msgid "document_total_minor"
+msgstr "Document total"
+
+msgid "English"
+msgstr "English"
+
+msgid "expected_inflow"
+msgstr "Expected inflow"
+
+msgid "expected_outflow"
+msgstr "Expected outflow"
+
+msgid "inflow"
+msgstr "Inflow"
+
+msgid "Language"
+msgstr "Language"
+
+msgid "money_account_name"
+msgstr "Money account"
+
+msgid "Only admins can manage closed period"
+msgstr "Only admins can manage closed period"
+
+msgid "Only admins can view audit log"
+msgstr "Only admins can view audit log"
+
+msgid "Only admins can view operation log"
+msgstr "Only admins can view operation log"
+
+msgid "Open ERP"
+msgstr "Open ERP"
+
+msgid "opening_balance"
+msgstr "Opening balance"
+
+msgid "outflow"
+msgstr "Outflow"
+
+msgid "paid_minor"
+msgstr "Paid"
+
+msgid "period"
+msgstr "Date"
+
+msgid "period_start"
+msgstr "Period start"
+
+msgid "product_name"
+msgstr "Product"
+
+msgid "quantity"
+msgstr "Quantity"
+
+msgid "reserved_quantity"
+msgstr "Reserved"
+
+msgid "row_kind"
+msgstr "Row type"
+
+msgid "unpaid_minor"
+msgstr "Unpaid"
+
+msgid "warehouse_name"
+msgstr "Warehouse"
+
+msgid "Администрирование"
+msgstr "Administration"
+
+msgid "Акт выполненных работ"
+msgstr "Certificate of completion"
+
+msgid "Акт сверки"
+msgstr "Reconciliation statement"
+
+msgid "Акт сверки взаиморасчётов"
+msgstr "Reconciliation statement"
+
+msgid "Артикул"
+msgstr "SKU"
+
+msgid "Аудит"
+msgstr "Audit"
+
+msgid "Банковский платеж"
+msgstr "Bank payment"
+
+msgid "Быстрые действия"
+msgstr "Quick actions"
+
+msgid "Валюта"
+msgstr "Currency"
+
+msgid "Валюты"
+msgstr "Currencies"
+
+msgid "Взаиморасчёты"
+msgstr "Settlements"
+
+msgid "Взаиморасчёты →"
+msgstr "Settlements →"
+
+msgid "Вид"
+msgstr "Kind"
+
+msgid "включительно."
+msgstr "inclusive."
+
+msgid "Возврат от покупателя"
+msgstr "Sales return"
+
+msgid "Возврат поставщику"
+msgstr "Purchase return"
+
+msgid "Войдите, чтобы продолжить"
+msgstr "Sign in to continue"
+
+msgid "Войти"
+msgstr "Sign in"
+
+msgid "Время"
+msgstr "Time"
+
+msgid "Все"
+msgstr "All"
+
+msgid "Все результаты"
+msgstr "All results"
+
+msgid "Вход — Open ERP"
+msgstr "Sign in — Open ERP"
+
+msgid "Выберите контрагента и период"
+msgstr "Select a counterparty and period"
+
+msgid "Выйти"
+msgstr "Sign out"
+
+msgid "выполнен"
+msgstr "fulfilled"
+
+msgid "Главная"
+msgstr "Home"
+
+msgid "Да"
+msgstr "Yes"
+
+msgid "Дата"
+msgstr "Date"
+
+msgid "Дата:"
+msgstr "Date:"
+
+msgid "Действия"
+msgstr "Actions"
+
+msgid "Денежные средства"
+msgstr "Cash"
+
+msgid "Денежные счета"
+msgstr "Money accounts"
+
+msgid "Денежный счет"
+msgstr "Money account"
+
+msgid "Денежный счёт"
+msgstr "Money account"
+
+msgid "Добавить"
+msgstr "Add"
+
+msgid "док."
+msgstr "doc."
+
+msgid "документ"
+msgstr "document"
+
+msgid "Документ"
+msgstr "Document"
+
+msgid "Документ-основание"
+msgstr "Base document"
+
+msgid "Документы"
+msgstr "Documents"
+
+msgid "Документы с датой не позже указанной даты нельзя создавать, изменять или проводить."
+msgstr "Documents dated on or before the closed date cannot be created, edited, or posted."
+
+msgid "Единица"
+msgstr "Unit"
+
+msgid "Единицы измерения"
+msgstr "Units of measure"
+
+msgid "Журнал аудита"
+msgstr "Audit log"
+
+msgid "Журнал операций"
+msgstr "Operation log"
+
+msgid "Загрузить ещё"
+msgstr "Load more"
+
+msgid "Заказ покупателя"
+msgstr "Sales order"
+
+msgid "Заказ поставщику"
+msgstr "Purchase order"
+
+msgid "Закрытый период"
+msgstr "Closed period"
+
+msgid "Закрытый период не установлен."
+msgstr "No closed period is set."
+
+msgid "Закрыть меню"
+msgstr "Close menu"
+
+msgid "Закрыть период до даты (включительно)"
+msgstr "Close period through date (inclusive)"
+
+msgid "Закрыть поиск"
+msgstr "Close search"
+
+msgid "заполните колонки и загрузите обратно"
+msgstr "fill in the columns and upload back"
+
+msgid "зарезервирован"
+msgstr "reserved"
+
+msgid "Изменение количества"
+msgstr "Quantity change"
+
+msgid "Изменить"
+msgstr "Edit"
+
+msgid "Импорт"
+msgstr "Import"
+
+msgid "Импортировать"
+msgstr "Import"
+
+msgid "ИНН"
+msgstr "Tax ID"
+
+msgid "Исполнение"
+msgstr "Fulfillment"
+
+msgid "Кассовый платеж"
+msgstr "Cash payment"
+
+msgid "Код"
+msgstr "Code"
+
+msgid "Количество"
+msgstr "Quantity"
+
+msgid "Комментарий"
+msgstr "Comment"
+
+msgid "Контрагент"
+msgstr "Counterparty"
+
+msgid "Контрагент:"
+msgstr "Counterparty:"
+
+msgid "Контрагенты"
+msgstr "Counterparties"
+
+msgid "Корректировка остатков"
+msgstr "Inventory adjustment"
+
+msgid "Курс"
+msgstr "Rate"
+
+msgid "Курсы валют"
+msgstr "Exchange rates"
+
+msgid "Мы должны"
+msgstr "Payables"
+
+msgid "На главную"
+msgstr "Back to home"
+
+msgid "На дату"
+msgstr "As of date"
+
+msgid "Наименование"
+msgstr "Name"
+
+msgid "Наименование..."
+msgstr "Name..."
+
+msgid "Найти"
+msgstr "Find"
+
+msgid "Нам должны"
+msgstr "Receivables"
+
+msgid "Направление"
+msgstr "Direction"
+
+msgid "Настройки"
+msgstr "Settings"
+
+msgid "Неверный email или пароль"
+msgstr "Invalid email or password"
+
+msgid "Неоплаченные документы"
+msgstr "Unpaid documents"
+
+msgid "Неоплаченный остаток:"
+msgstr "Unpaid balance:"
+
+msgid "Нет данных"
+msgstr "No data"
+
+msgid "Нет данных за указанный период"
+msgstr "No data for the selected period"
+
+msgid "Нет движений по деньгам. Оформите кассовый или банковский платёж."
+msgstr "No cash movements. Create a cash or bank payment."
+
+msgid "Нет документов"
+msgstr "No documents"
+
+msgid "Нет задолженностей"
+msgstr "No outstanding balances"
+
+msgid "Нет записей"
+msgstr "No entries"
+
+msgid "Нет остатков"
+msgstr "No balances"
+
+msgid "Нет строк. Нажмите «Добавить»."
+msgstr "No rows. Click “Add”."
+
+msgid "Ничего не найдено."
+msgstr "Nothing found."
+
+msgid "новый"
+msgstr "new"
+
+msgid "новый элемент"
+msgstr "new item"
+
+msgid "Номенклатура"
+msgstr "Products"
+
+msgid "Номер"
+msgstr "Number"
+
+msgid "Оборотно-сальдовая ведомость"
+msgstr "Trial balance"
+
+msgid "Объект"
+msgstr "Object"
+
+msgid "Операции"
+msgstr "Operations"
+
+msgid "Операция"
+msgstr "Operation"
+
+msgid "Операция невозможна"
+msgstr "Operation not allowed"
+
+msgid "Описание"
+msgstr "Description"
+
+msgid "Организации"
+msgstr "Organizations"
+
+msgid "Остатки по денежным счетам"
+msgstr "Cash account balances"
+
+msgid "Остатки товаров"
+msgstr "Stock balance"
+
+msgid "Открыть"
+msgstr "Open"
+
+msgid "Открыть меню"
+msgstr "Open menu"
+
+msgid "Отмена"
+msgstr "Cancel"
+
+msgid "Отменить проведение"
+msgstr "Unpost"
+
+msgid "Отменён"
+msgstr "Cancelled"
+
+msgid "отменён"
+msgstr "cancelled"
+
+msgid "Отчёт по продажам →"
+msgstr "Sales report →"
+
+msgid "Отчёты"
+msgstr "Reports"
+
+msgid "Ошибка"
+msgstr "Error"
+
+msgid "Ошибки"
+msgstr "Errors"
+
+msgid "Пароль"
+msgstr "Password"
+
+msgid "Перемещение товаров"
+msgstr "Stock transfer"
+
+msgid "Период:"
+msgstr "Period:"
+
+msgid "Печать"
+msgstr "Print"
+
+msgid "Платежный календарь"
+msgstr "Payment calendar"
+
+msgid "По"
+msgstr "To"
+
+msgid "По запросу «%(query)s» ничего не найдено."
+msgstr "No results found for “%(query)s”."
+
+msgid "Подробный отчёт по деньгам →"
+msgstr "Detailed cash report →"
+
+msgid "позиций на складах"
+msgstr "stock positions"
+
+msgid "Поиск"
+msgstr "Search"
+
+msgid "Поиск по наименованию"
+msgstr "Search by name"
+
+msgid "Поиск по справочникам и документам..."
+msgstr "Search catalogs and documents..."
+
+msgid "Поиск..."
+msgstr "Searching..."
+
+msgid "Поступление HTML"
+msgstr "Receipt HTML"
+
+msgid "Поступление товаров"
+msgstr "Goods receipt"
+
+msgid "Применить"
+msgstr "Apply"
+
+msgid "Приход"
+msgstr "Incoming"
+
+msgid "Проведён"
+msgstr "Posted"
+
+msgid "проведён"
+msgstr "posted"
+
+msgid "Провести"
+msgstr "Post"
+
+msgid "Продажи"
+msgstr "Sales"
+
+msgid "Продажи за месяц по товарам"
+msgstr "Monthly sales by product"
+
+msgid "Продажи с начала месяца"
+msgstr "Sales month to date"
+
+msgid "Расход"
+msgstr "Outgoing"
+
+msgid "Расчеты с контрагентами"
+msgstr "Counterparty settlements"
+
+msgid "Реализация HTML"
+msgstr "Sale HTML"
+
+msgid "Реализация товаров"
+msgstr "Goods sale"
+
+msgid "редактирование"
+msgstr "editing"
+
+msgid "Редактировать"
+msgstr "Edit"
+
+msgid "Резерв товаров"
+msgstr "Reserved stock"
+
+msgid "Результаты поиска"
+msgstr "Search results"
+
+msgid "Русский"
+msgstr "Russian"
+
+msgid "С"
+msgstr "From"
+
+msgid "Сводка на"
+msgstr "Summary as of"
+
+msgid "Скачать шаблон CSV"
+msgstr "Download CSV template"
+
+msgid "Склад"
+msgstr "Warehouse"
+
+msgid "Склад пуст. Оформите поступление товаров."
+msgstr "Warehouse is empty. Create a goods receipt."
+
+msgid "Склад-отправитель"
+msgstr "Source warehouse"
+
+msgid "Склад-получатель"
+msgstr "Destination warehouse"
+
+msgid "Склады"
+msgstr "Warehouses"
+
+msgid "Создать"
+msgstr "Create"
+
+msgid "Сохранить"
+msgstr "Save"
+
+msgid "справ."
+msgstr "cat."
+
+msgid "справочник"
+msgstr "catalog"
+
+msgid "Справочники"
+msgstr "Catalogs"
+
+msgid "Статус"
+msgstr "Status"
+
+msgid "Статьи движения денежных средств"
+msgstr "Cash flow items"
+
+msgid "Статья ДДС"
+msgstr "Cash flow item"
+
+msgid "строк"
+msgstr "rows"
+
+msgid "Строка"
+msgstr "Row"
+
+msgid "Сумма"
+msgstr "Amount"
+
+msgid "Сумма в копейках"
+msgstr "Amount (minor units)"
+
+msgid "Сумма, коп."
+msgstr "Amount, kopecks"
+
+msgid "счет(ов)"
+msgstr "account(s)"
+
+msgid "Счёт на оплату"
+msgstr "Invoice"
+
+msgid "Текущий закрытый период: до"
+msgstr "Current closed period: through"
+
+msgid "Тип"
+msgstr "Type"
+
+msgid "Тип документа-основания"
+msgstr "Base document type"
+
+msgid "Тип счета"
+msgstr "Account type"
+
+msgid "Тип цены"
+msgstr "Price type"
+
+msgid "Типы цен"
+msgstr "Price types"
+
+msgid "Товары"
+msgstr "Goods"
+
+msgid "Товары на складах"
+msgstr "Stock on hand"
+
+msgid "Только проверка (без записи)"
+msgstr "Dry run only (no writes)"
+
+msgid "Топ остатков товаров"
+msgstr "Top stock balances"
+
+msgid "Точность"
+msgstr "Precision"
+
+msgid "Удалить"
+msgstr "Delete"
+
+msgid "Удалить документ?"
+msgstr "Delete document?"
+
+msgid "Удалить?"
+msgstr "Delete?"
+
+msgid "Управленческий учёт"
+msgstr "Management accounting"
+
+msgid "Успешно импортировано:"
+msgstr "Successfully imported:"
+
+msgid "Уточнить поиск..."
+msgstr "Refine search..."
+
+msgid "Файл (CSV или XLSX)"
+msgstr "File (CSV or XLSX)"
+
+msgid "Файл не выбран"
+msgstr "No file selected"
+
+msgid "Цена"
+msgstr "Price"
+
+msgid "Цены номенклатуры"
+msgstr "Product prices"
+
+msgid "частично"
+msgstr "partial"
+
+msgid "Черновик"
+msgstr "Draft"
+
+msgid "черновик"
+msgstr "draft"
+
+msgid "Шапка документа"
+msgstr "Document header"
+
+msgid "Штрихкод"
+msgstr "Barcode"
+
+msgid "— без привязки —"
+msgstr "— unlinked —"
+
+msgid "— выбрать —"
+msgstr "— select —"

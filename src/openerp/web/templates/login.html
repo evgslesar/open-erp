@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{ locale | default('ru') }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -18,7 +18,7 @@
       }}
     }
   </script>
-  <title>Вход — Open ERP</title>
+  <title>{{ _('Вход — Open ERP') }}</title>
   <style>body { font-family: 'Fira Sans', sans-serif; }</style>
 </head>
 <body class="bg-primary-dark min-h-screen flex items-center justify-center px-4">
@@ -30,7 +30,7 @@
         </svg>
       </div>
       <h1 class="text-xl font-semibold text-white">Open ERP</h1>
-      <p class="text-sm text-white/60 mt-1">Войдите, чтобы продолжить</p>
+      <p class="text-sm text-white/60 mt-1">{{ _('Войдите, чтобы продолжить') }}</p>
     </div>
 
     {% if error %}
@@ -38,6 +38,16 @@
       {{ error }}
     </div>
     {% endif %}
+
+  {# Language switcher on login #}
+  <div class="flex justify-center gap-2 mb-4 text-sm">
+    {% for loc in supported_locales %}
+    <a href="/set-locale/{{ loc }}"
+       class="px-2 py-1 rounded {{ 'text-accent font-medium' if loc == locale else 'text-white/50 hover:text-white/80' }}">
+      {{ loc|upper }}
+    </a>
+    {% endfor %}
+  </div>
 
     <form method="post" action="/login?next={{ next }}" class="bg-white rounded-xl shadow-xl p-6 space-y-4">
       <label class="block">
@@ -47,13 +57,13 @@
                class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
       </label>
       <label class="block">
-        <span class="text-sm font-medium text-slate-700">Пароль</span>
+        <span class="text-sm font-medium text-slate-700">{{ _('Пароль') }}</span>
         <input type="password" name="password" required
                class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
       </label>
       <button type="submit"
               class="w-full bg-primary hover:bg-primary-dark text-white font-medium py-2.5 rounded-lg transition-colors">
-        Войти
+        {{ _('Войти') }}
       </button>
     </form>
   </div>

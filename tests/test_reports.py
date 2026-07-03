@@ -112,6 +112,79 @@ def test_stock_balance_report_shows_remaining(client):
     assert "80" in response.text
 
 
+def test_stock_balance_report_shows_reserve_columns(tmp_path, monkeypatch):
+    db_path = tmp_path / "stock_reserve.db"
+    monkeypatch.setenv("OPENERP_DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("OPENERP_SECRET_KEY", "test-secret")
+    engine, registry = init_engine(f"sqlite:///{db_path}")
+    with transaction(engine) as connection:
+        ensure_admin_security(connection)
+        context = RequestContext(user_id=1, organization_id=1, is_admin=True)
+        repository = Repository(connection, registry, context)
+        currency_id = repository.create_catalog_item(
+            "currency", {"name": "RUB", "code": "RUB", "scale": 2}
+        )
+        warehouse_id = repository.create_catalog_item("warehouse", {"name": "Main"})
+        counterparty_id = repository.create_catalog_item(
+            "counterparty", {"name": "Customer", "tax_id": "1"}
+        )
+        product_id = repository.create_catalog_item(
+            "product", {"name": "Widget", "sku": "W1", "unit": "pcs"}
+        )
+        receipt_id = repository.create_document(
+            "receipt",
+            {
+                "date": date.today(),
+                "counterparty_id": counterparty_id,
+                "warehouse_id": warehouse_id,
+            },
+            {
+                "lines": [
+                    {
+                        "product_id": product_id,
+                        "quantity": "100",
+                        "price": "50.00",
+                        "amount_minor": 500000,
+                        "currency_id": currency_id,
+                    }
+                ]
+            },
+        )
+        order_id = repository.create_document(
+            "order",
+            {
+                "date": date.today(),
+                "counterparty_id": counterparty_id,
+                "warehouse_id": warehouse_id,
+            },
+            {
+                "lines": [
+                    {
+                        "product_id": product_id,
+                        "quantity": "30",
+                        "price": "75.00",
+                        "amount_minor": 225000,
+                        "currency_id": currency_id,
+                    }
+                ]
+            },
+        )
+        poster = DocumentPostingService(connection, registry, context)
+        poster.post("receipt", receipt_id)
+        poster.post("order", order_id)
+
+    test_client = TestClient(create_app())
+    test_client.post(
+        "/login", data={"email": DEMO_ADMIN_EMAIL, "password": DEMO_ADMIN_PASSWORD}
+    )
+    response = test_client.get("/reports/stock_balance")
+    assert response.status_code == 200
+    assert "reserved_quantity" in response.text
+    assert "available_quantity" in response.text
+    assert "30" in response.text
+    assert "70" in response.text
+
+
 def test_sales_report_shows_sold_quantity_and_revenue(client):
     response = client.get("/reports/sales")
     assert response.status_code == 200

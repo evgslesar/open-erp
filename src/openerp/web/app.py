@@ -46,13 +46,67 @@ from openerp.core.security import (
     load_user_context,
 )
 from openerp.db import transaction
+from openerp.modules.trade.orders import enrich_order_rows
 from openerp.modules.trade.reports import dashboard_summary, format_money_minor
+from openerp.modules.trade.settlements import unpaid_documents
+from openerp.web.locale import select_locale, set_locale_cookie, translator
 
 templates = Jinja2Templates(directory="src/openerp/web/templates")
 templates.env.filters["money"] = format_money_minor
 templates.env.filters["tojson"] = lambda value: Markup(
     json.dumps(value, ensure_ascii=False)
 )
+
+
+def _base_context(request: Request, context: RequestContext | None) -> dict:
+    settings = get_settings()
+    locale = select_locale(request)
+    _ = translator(locale)
+    return {
+        "request": request,
+        "context": context,
+        "settings": settings,
+        "locale": locale,
+        "supported_locales": settings.available_locales,
+        "_": _,
+        "i18n_js": {
+            "searching": _("Поиск..."),
+            "noResults": _("Ничего не найдено."),
+            "catalogAbbr": _("справ."),
+            "docAbbr": _("док."),
+            "allResults": _("Все результаты"),
+        },
+    }
+
+
+def _render(
+    request: Request,
+    template: str,
+    *,
+    context: RequestContext | None,
+    extra: dict | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    data = _base_context(request, context)
+    if extra:
+        data.update(extra)
+    return templates.TemplateResponse(request, template, data, status_code=status_code)
+
+
+def _render_error(request: Request, message: str, status_code: int) -> HTMLResponse:
+    data = _base_context(request, None)
+    data["message"] = data["_"](message)
+    return templates.TemplateResponse(request, "error.html", data, status_code=status_code)
+
+
+def _translate_search_groups(request: Request, groups: list[dict]) -> list[dict]:
+    _ = translator(select_locale(request))
+    translated: list[dict] = []
+    for group in groups:
+        item = dict(group)
+        item["group_label"] = _(group["group_label"])
+        translated.append(item)
+    return translated
 
 
 def catalog_by_name(registry, catalog_name: str) -> CatalogDef:
@@ -233,6 +287,37 @@ def table_parts_for_form(document_def: DocumentDef, document: dict) -> dict[str,
     }
 
 
+GOODS_LINE_DOCUMENTS = frozenset(
+    {"sale", "receipt", "order", "purchase_order", "sale_return", "purchase_return"}
+)
+PAYMENT_DOCUMENTS = frozenset({"cash_payment", "bank_payment"})
+FILTERED_REPORTS = frozenset({"unpaid_documents", "reconciliation"})
+
+
+def form_page_extras(repository: Repository, document_def: DocumentDef) -> dict:
+    extras: dict = {
+        "has_goods_lines": document_def.name in GOODS_LINE_DOCUMENTS,
+        "is_payment_document": document_def.name in PAYMENT_DOCUMENTS,
+        "currency_scales": {},
+    }
+    if extras["has_goods_lines"]:
+        for item in repository.list_catalog_items("currency", limit=500):
+            extras["currency_scales"][str(item["id"])] = int(item.get("scale", 2))
+    return extras
+
+
+def document_form_template(document_name: str) -> str:
+    if document_name in PAYMENT_DOCUMENTS:
+        return "documents/form_payment.html"
+    return "documents/form.html"
+
+
+def report_template_name(report_name: str) -> str:
+    if report_name == "reconciliation":
+        return "reports/reconciliation.html"
+    return "reports/generic.html"
+
+
 def _collect_reference_options(
     repository: Repository,
     registry,
@@ -308,57 +393,34 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(DocumentStateError)
     async def on_document_state_error(request: Request, exc: DocumentStateError):
-        return templates.TemplateResponse(
-            request,
-            "error.html",
-            {"message": str(exc), "context": None},
-            status_code=409,
-        )
+        return _render_error(request, str(exc), 409)
 
     @app.exception_handler(InsufficientStockError)
     async def on_insufficient_stock(request: Request, exc: InsufficientStockError):
-        return templates.TemplateResponse(
-            request,
-            "error.html",
-            {"message": str(exc), "context": None},
-            status_code=409,
-        )
+        return _render_error(request, str(exc), 409)
 
     @app.exception_handler(InsufficientFundsError)
     async def on_insufficient_funds(request: Request, exc: InsufficientFundsError):
-        return templates.TemplateResponse(
-            request,
-            "error.html",
-            {"message": str(exc), "context": None},
-            status_code=409,
-        )
+        return _render_error(request, str(exc), 409)
 
     @app.exception_handler(InvalidPostingError)
     async def on_invalid_posting(request: Request, exc: InvalidPostingError):
-        return templates.TemplateResponse(
-            request,
-            "error.html",
-            {"message": str(exc), "context": None},
-            status_code=409,
-        )
+        return _render_error(request, str(exc), 409)
 
     @app.exception_handler(ClosedPeriodError)
     async def on_closed_period(request: Request, exc: ClosedPeriodError):
-        return templates.TemplateResponse(
-            request,
-            "error.html",
-            {"message": str(exc), "context": None},
-            status_code=409,
-        )
+        return _render_error(request, str(exc), 409)
 
     @app.exception_handler(PermissionDenied)
     async def on_permission_denied(request: Request, exc: PermissionDenied):
-        return templates.TemplateResponse(
-            request,
-            "error.html",
-            {"message": str(exc), "context": None},
-            status_code=403,
-        )
+        return _render_error(request, str(exc), 403)
+
+    @app.get("/set-locale/{locale}")
+    def set_locale(request: Request, locale: str):
+        referer = request.headers.get("referer", "/")
+        response = RedirectResponse(referer, status_code=303)
+        set_locale_cookie(response, locale)
+        return response
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, context: CurrentContext):
@@ -369,25 +431,21 @@ def create_app() -> FastAPI:
         ]
         with transaction(engine) as connection:
             dashboard = dashboard_summary(connection, registry, context)
-        return templates.TemplateResponse(
+        return _render(
             request,
             "index.html",
-            {
+            context=context,
+            extra={
                 "catalogs": registry.catalogs(),
                 "documents": registry.documents(),
                 "reports": reports,
                 "dashboard": dashboard,
-                "context": context,
             },
         )
 
     @app.get("/login", response_class=HTMLResponse)
     def login_form(request: Request, next: str = "/"):
-        return templates.TemplateResponse(
-            request,
-            "login.html",
-            {"next": next, "error": None},
-        )
+        return _render(request, "login.html", context=None, extra={"next": next, "error": None})
 
     @app.post("/login")
     async def login(request: Request, next: str = "/"):
@@ -398,10 +456,13 @@ def create_app() -> FastAPI:
             with transaction(engine) as connection:
                 user = authenticate(connection, email, password)
         except AuthenticationError:
-            return templates.TemplateResponse(
+            data = _base_context(request, None)
+            _ = data["_"]
+            return _render(
                 request,
                 "login.html",
-                {"next": next, "error": "Неверный email или пароль"},
+                context=None,
+                extra={"next": next, "error": _("Неверный email или пароль")},
                 status_code=401,
             )
         request.session["user_id"] = user["id"]
@@ -423,10 +484,11 @@ def create_app() -> FastAPI:
             repository = Repository(connection, registry, context)
             rows = repository.list_catalog_items(catalog_name, q=q or None)
         catalog = catalog_by_name(registry, catalog_name)
-        return templates.TemplateResponse(
+        return _render(
             request,
             "catalogs/list.html",
-            {"catalog": catalog, "rows": rows, "q": q, "context": context},
+            context=context,
+            extra={"catalog": catalog, "rows": rows, "q": q},
         )
 
     @app.get("/catalogs/{catalog_name}/new", response_class=HTMLResponse)
@@ -436,14 +498,14 @@ def create_app() -> FastAPI:
         context: CurrentContext,
     ):
         catalog = catalog_by_name(registry, catalog_name)
-        return templates.TemplateResponse(
+        return _render(
             request,
             "catalogs/form.html",
-            {
+            context=context,
+            extra={
                 "catalog": catalog,
                 "item": {},
                 "action": f"/catalogs/{catalog_name}/new",
-                "context": context,
             },
         )
 
@@ -472,14 +534,14 @@ def create_app() -> FastAPI:
         with transaction(engine) as connection:
             repository = Repository(connection, registry, context)
             item = repository.get_catalog_item(catalog_name, item_id)
-        return templates.TemplateResponse(
+        return _render(
             request,
             "catalogs/form.html",
-            {
+            context=context,
+            extra={
                 "catalog": catalog,
                 "item": item,
                 "action": f"/catalogs/{catalog_name}/{item_id}/edit",
-                "context": context,
             },
         )
 
@@ -516,10 +578,11 @@ def create_app() -> FastAPI:
         context: CurrentContext,
     ):
         catalog = catalog_by_name(registry, catalog_name)
-        return templates.TemplateResponse(
+        return _render(
             request,
             "catalogs/import.html",
-            {"catalog": catalog, "result": None, "context": context},
+            context=context,
+            extra={"catalog": catalog, "result": None},
         )
 
     @app.post("/catalogs/{catalog_name}/import")
@@ -533,13 +596,13 @@ def create_app() -> FastAPI:
         upload = form.get("file")
         dry_run = form.get("dry_run") == "1"
         if upload is None or not hasattr(upload, "read"):
-            return templates.TemplateResponse(
+            return _render(
                 request,
                 "catalogs/import.html",
-                {
+                context=context,
+                extra={
                     "catalog": catalog,
-                    "result": {"errors": [{"row": 0, "error": "No file selected"}]},
-                    "context": context,
+                    "result": {"errors": [{"row": 0, "error": _("Файл не выбран")}]},
                 },
                 status_code=400,
             )
@@ -553,10 +616,11 @@ def create_app() -> FastAPI:
             result = import_catalog_rows(
                 connection, registry, context, catalog_name, rows, dry_run=dry_run
             )
-        return templates.TemplateResponse(
+        return _render(
             request,
             "catalogs/import.html",
-            {"catalog": catalog, "result": result, "context": context},
+            context=context,
+            extra={"catalog": catalog, "result": result},
         )
 
     @app.get("/catalogs/{catalog_name}/import-template")
@@ -617,21 +681,23 @@ def create_app() -> FastAPI:
                 filter_options["warehouse_id"] = reference_options(
                     repository, registry, "warehouse_id"
                 ) or []
+            if document_name == "order":
+                rows = enrich_order_rows(connection, rows)
         document = registry.document(document_name)
         next_cursor = rows[-1] if len(rows) == limit else None
         is_hx = request.headers.get("HX-Request") == "true"
         template = "documents/_rows.html" if is_hx else "documents/list.html"
-        return templates.TemplateResponse(
+        return _render(
             request,
             template,
-            {
+            context=context,
+            extra={
                 "document": document,
                 "rows": rows,
                 "next_cursor": next_cursor,
                 "filters": filters,
                 "filter_options": filter_options,
                 "filter_query": filter_query,
-                "context": context,
             },
         )
 
@@ -658,17 +724,29 @@ def create_app() -> FastAPI:
                         "based_on_document_id": source_id,
                         "lines": source.get("lines", []),
                     }
+            elif based and document_name in PAYMENT_DOCUMENTS:
+                source_type, source_id = based
+                if source_type in ("sale", "receipt"):
+                    source = repository.get_document(source_type, source_id)
+                    prefilled = {
+                        "counterparty_id": source.get("counterparty_id"),
+                        "allocation_document_type": source_type,
+                        "allocation_document_id": source_id,
+                        "direction": "incoming" if source_type == "sale" else "outgoing",
+                    }
             references = _collect_reference_options(repository, registry, document_def)
-        return templates.TemplateResponse(
+            page_extras = form_page_extras(repository, document_def)
+        return _render(
             request,
-            "documents/form.html",
-            {
+            document_form_template(document_name),
+            context=context,
+            extra={
                 "document_def": document_def,
                 "document": prefilled,
                 "form_table_rows": table_parts_for_form(document_def, prefilled),
                 "action": f"/documents/{document_name}/new",
                 "references": references,
-                "context": context,
+                **page_extras,
             },
         )
 
@@ -700,16 +778,18 @@ def create_app() -> FastAPI:
             repository = Repository(connection, registry, context)
             document = repository.get_document(document_name, document_id)
             references = _collect_reference_options(repository, registry, document_def)
-        return templates.TemplateResponse(
+            page_extras = form_page_extras(repository, document_def)
+        return _render(
             request,
-            "documents/form.html",
-            {
+            document_form_template(document_name),
+            context=context,
+            extra={
                 "document_def": document_def,
                 "document": document,
                 "form_table_rows": table_parts_for_form(document_def, document),
                 "action": f"/documents/{document_name}/{document_id}/edit",
                 "references": references,
-                "context": context,
+                **page_extras,
             },
         )
 
@@ -786,13 +866,39 @@ def create_app() -> FastAPI:
         with transaction(engine) as connection:
             repository = Repository(connection, registry, context)
             document = repository.get_document(document_name, document_id)
-        return templates.TemplateResponse(
+            document_def = registry.document(document_name)
+            view_extras: dict = {}
+            if document_name in PAYMENT_DOCUMENTS:
+                counterparties = reference_options(repository, registry, "counterparty_id") or []
+                cp_map = {item["id"]: item["name"] for item in counterparties}
+                money_accounts = reference_options(repository, registry, "money_account_id") or []
+                ma_map = {item["id"]: item["name"] for item in money_accounts}
+                allocation_label = ""
+                alloc_type = document.get("allocation_document_type")
+                alloc_id = document.get("allocation_document_id")
+                if alloc_type and alloc_id:
+                    try:
+                        base = repository.get_document(alloc_type, int(alloc_id))
+                        allocation_label = f"{alloc_type} {base.get('number', alloc_id)}"
+                    except Exception:
+                        allocation_label = f"{alloc_type}/{alloc_id}"
+                view_extras["payment_details"] = {
+                    "counterparty_name": cp_map.get(document.get("counterparty_id"), ""),
+                    "money_account_name": ma_map.get(document.get("money_account_id"), ""),
+                    "direction": document.get("direction"),
+                    "amount_minor": document.get("amount_minor"),
+                    "allocation_label": allocation_label,
+                    "allocation_type": alloc_type,
+                    "allocation_id": alloc_id,
+                }
+        return _render(
             request,
             "documents/view.html",
-            {
-                "document_def": registry.document(document_name),
+            context=context,
+            extra={
+                "document_def": document_def,
                 "document": document,
-                "context": context,
+                **view_extras,
             },
         )
 
@@ -814,10 +920,11 @@ def create_app() -> FastAPI:
                     if print_form.name == form and print_form.document == document_name:
                         template_name = print_form.template
                         break
-        return templates.TemplateResponse(
+        return _render(
             request,
             template_name,
-            {"document_name": document_name, "document": document, "context": context},
+            context=context,
+            extra={"document_name": document_name, "document": document},
         )
 
     @app.get("/reports/{report_name}", response_class=HTMLResponse)
@@ -828,6 +935,8 @@ def create_app() -> FastAPI:
         on_date: date | None = None,
         date_from: date | None = None,
         date_to: date | None = None,
+        counterparty_id: int | None = None,
+        currency_id: int | None = None,
     ):
         report_def = registry.report(report_name)
         handler = registry.report_handlers[report_def.handler]
@@ -838,18 +947,68 @@ def create_app() -> FastAPI:
             params["date_from"] = date_from
         if date_to:
             params["date_to"] = date_to
+        if counterparty_id is not None:
+            params["counterparty_id"] = counterparty_id
+        if currency_id is not None:
+            params["currency_id"] = currency_id
+        filter_options: dict[str, list[dict]] = {}
         with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            if report_name in FILTERED_REPORTS:
+                filter_options["counterparty_id"] = reference_options(
+                    repository, registry, "counterparty_id"
+                ) or []
+            if report_name == "reconciliation":
+                filter_options["currency_id"] = reference_options(
+                    repository, registry, "currency_id"
+                ) or []
             rows = _call_report_handler(handler, connection, registry, context, **params)
-        return templates.TemplateResponse(
+        return _render(
             request,
-            "reports/generic.html",
-            {
+            report_template_name(report_name),
+            context=context,
+            extra={
                 "report": report_def,
                 "rows": rows,
                 "on_date": on_date or date.today(),
                 "date_from": date_from,
                 "date_to": date_to or date.today(),
-                "context": context,
+                "counterparty_id": counterparty_id,
+                "currency_id": currency_id,
+                "filter_options": filter_options,
+            },
+        )
+
+    @app.get("/reports/reconciliation/print", response_class=HTMLResponse)
+    def reconciliation_print(
+        request: Request,
+        context: CurrentContext,
+        counterparty_id: int,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        currency_id: int | None = None,
+    ):
+        handler = registry.report_handlers["trade.reconciliation_report"]
+        params: dict = {"counterparty_id": counterparty_id}
+        if date_from:
+            params["date_from"] = date_from
+        if date_to:
+            params["date_to"] = date_to
+        if currency_id is not None:
+            params["currency_id"] = currency_id
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            rows = _call_report_handler(handler, connection, registry, context, **params)
+            counterparty = repository.get_catalog_item("counterparty", counterparty_id)
+        return _render(
+            request,
+            "reports/reconciliation_print.html",
+            context=context,
+            extra={
+                "rows": rows,
+                "counterparty": counterparty,
+                "date_from": date_from,
+                "date_to": date_to or date.today(),
             },
         )
 
@@ -860,24 +1019,25 @@ def create_app() -> FastAPI:
             return RedirectResponse("/", status_code=303)
         with transaction(engine) as connection:
             data = global_search(connection, registry, context, q)
-        return templates.TemplateResponse(
+        return _render(
             request,
             "search.html",
-            {
+            context=context,
+            extra={
                 "query": data["query"],
-                "groups": data["groups"],
+                "groups": _translate_search_groups(request, data["groups"]),
                 "total": data["total"],
-                "context": context,
             },
         )
 
     @app.get("/api/search")
-    def api_search(context: CurrentContext, q: str = "", limit: int = 10):
+    def api_search(request: Request, context: CurrentContext, q: str = "", limit: int = 10):
         limit = min(max(limit, 1), 50)
         with transaction(engine) as connection:
             data = global_search(connection, registry, context, q, limit=limit)
+        groups = _translate_search_groups(request, data["groups"])
         flat = []
-        for group in data["groups"]:
+        for group in groups:
             for item in group["results"]:
                 flat.append({
                     "type": item["type"],
@@ -897,10 +1057,11 @@ def create_app() -> FastAPI:
             raise PermissionDenied("Only admins can manage closed period")
         with transaction(engine) as connection:
             closed_until = get_closed_period(connection, context)
-        return templates.TemplateResponse(
+        return _render(
             request,
             "settings/closed_period.html",
-            {"closed_until": closed_until, "context": context},
+            context=context,
+            extra={"closed_until": closed_until},
         )
 
     @app.post("/settings/closed-period")
@@ -931,15 +1092,15 @@ def create_app() -> FastAPI:
                 date_to=date_to,
                 operation=operation or None,
             )
-        return templates.TemplateResponse(
+        return _render(
             request,
             "audit/list.html",
-            {
+            context=context,
+            extra={
                 "rows": rows,
                 "date_from": date_from,
                 "date_to": date_to,
                 "operation": operation,
-                "context": context,
             },
         )
 
@@ -961,15 +1122,15 @@ def create_app() -> FastAPI:
                 date_to=date_to,
                 operation=operation or None,
             )
-        return templates.TemplateResponse(
+        return _render(
             request,
             "operations/list.html",
-            {
+            context=context,
+            extra={
                 "rows": rows,
                 "date_from": date_from,
                 "date_to": date_to,
                 "operation": operation,
-                "context": context,
             },
         )
 
@@ -990,6 +1151,22 @@ def create_app() -> FastAPI:
             return JSONResponse({"price": None, "currency_id": None})
         row = rows[0]
         return JSONResponse({"price": row["price"], "currency_id": row["currency_id"]})
+
+    @app.get("/api/unpaid-documents")
+    def api_unpaid_documents(
+        context: CurrentContext,
+        counterparty_id: int,
+        document_type: str | None = None,
+    ):
+        doc_types = (document_type,) if document_type else ("sale", "receipt")
+        with transaction(engine) as connection:
+            rows = unpaid_documents(
+                connection,
+                context.organization_id,
+                counterparty_id,
+                doc_types=doc_types,
+            )
+        return JSONResponse({"items": [serialize_row(row) for row in rows]})
 
     @app.get("/api/v1/catalogs/{catalog_name}")
     def api_catalog_list(
@@ -1049,6 +1226,8 @@ def create_app() -> FastAPI:
         on_date: date | None = None,
         date_from: date | None = None,
         date_to: date | None = None,
+        counterparty_id: int | None = None,
+        currency_id: int | None = None,
     ):
         report_def = registry.report(report_name)
         handler = registry.report_handlers[report_def.handler]
@@ -1059,6 +1238,10 @@ def create_app() -> FastAPI:
             params["date_from"] = date_from
         if date_to:
             params["date_to"] = date_to
+        if counterparty_id is not None:
+            params["counterparty_id"] = counterparty_id
+        if currency_id is not None:
+            params["currency_id"] = currency_id
         with transaction(engine) as connection:
             rows = _call_report_handler(handler, connection, registry, context, **params)
         buffer = io.BytesIO()

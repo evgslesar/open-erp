@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.engine import Engine
 
 from openerp.config import get_settings
+from openerp.i18n import compile_translation_catalogs
 from openerp.core.metadata import MetadataRegistry
 from openerp.core.migrations import ModuleMigrator
 from openerp.core.schema import create_all
@@ -19,6 +20,7 @@ def build_registry() -> MetadataRegistry:
 
 def init_engine(database_url: str | None = None) -> tuple[Engine, MetadataRegistry]:
     settings = get_settings()
+    compile_translation_catalogs()
     registry = build_registry()
     engine = create_db_engine(database_url or settings.database_url)
     metadata = create_all(engine, registry)

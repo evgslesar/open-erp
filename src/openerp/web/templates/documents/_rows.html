@@ -1,13 +1,16 @@
-{% import "documents/_macros.html" as doc_macros %}
+{% import "documents/_macros.html" as doc_macros with context %}
 {% for row in rows %}
 <tr class="hover:bg-slate-50 transition-colors">
   <td class="px-4 py-3 text-slate-600 num">{{ row.date }}</td>
   <td class="px-4 py-3 font-medium text-slate-700 num">{{ row.number }}</td>
   <td class="px-4 py-3">{{ doc_macros.status_badge(row.status) }}</td>
+  {% if document.name == 'order' %}
+  <td class="px-4 py-3">{{ doc_macros.order_fulfillment_badge(row.fulfillment_status) }}</td>
+  {% endif %}
   <td class="px-4 py-3 text-slate-500 max-w-xs truncate">{{ row.comment or '' }}</td>
   <td class="px-4 py-3 text-right">
     <a href="/documents/{{ document.name }}/{{ row.id }}"
-       class="text-primary hover:text-primary-dark text-xs font-medium">Открыть</a>
+       class="text-primary hover:text-primary-dark text-xs font-medium">{{ _('Открыть') }}</a>
   </td>
 </tr>
 {% endfor %}
@@ -18,7 +21,7 @@
     <button hx-get="/documents/{{ document.name }}?{{ filter_query }}&after_date={{ next_cursor.date }}&after_id={{ next_cursor.id }}"
             hx-target="#document-rows" hx-swap="beforeend"
             class="px-4 py-2 text-sm border border-surface-border rounded-lg hover:bg-slate-50 transition-colors text-slate-600">
-      Загрузить ещё
+      {{ _('Загрузить ещё') }}
     </button>
   </div>
 </div>

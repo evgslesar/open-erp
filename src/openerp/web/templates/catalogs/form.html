@@ -4,25 +4,25 @@
 <div class="max-w-2xl space-y-4">
   <div>
     <nav class="text-xs text-slate-400 mb-1">
-      <a href="/" class="hover:text-primary">Главная</a>
+      <a href="/" class="hover:text-primary">{{ _('Главная') }}</a>
       <span class="mx-1">/</span>
-      <a href="/catalogs/{{ catalog.name }}" class="hover:text-primary">{{ catalog.label }}</a>
+      <a href="/catalogs/{{ catalog.name }}" class="hover:text-primary">{{ _(catalog.label) }}</a>
     </nav>
     <h1 class="text-xl font-semibold text-primary-dark">
-      {{ catalog.label }}: {{ item.name or 'новый элемент' }}
+      {{ _(catalog.label) }}: {{ item.name or _('новый элемент') }}
     </h1>
   </div>
 
   <form method="post" action="{{ action }}" class="bg-surface-card border border-surface-border rounded-xl p-6 space-y-4">
     <label class="block">
-      <span class="text-sm font-medium text-slate-700">Наименование</span>
+      <span class="text-sm font-medium text-slate-700">{{ _('Наименование') }}</span>
       <input type="text" name="name" value="{{ item.name or '' }}" required
              class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
     </label>
 
     {% for field in catalog.fields %}
     <label class="block">
-      <span class="text-sm font-medium text-slate-700">{{ field.label }}{% if field.required %} <span class="text-red-500">*</span>{% endif %}</span>
+      <span class="text-sm font-medium text-slate-700">{{ _(field.label) }}{% if field.required %} <span class="text-red-500">*</span>{% endif %}</span>
       {% if field.type == 'text' %}
         <textarea name="{{ field.name }}" rows="3"
                   class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">{{ item.get(field.name) or '' }}</textarea>
@@ -36,7 +36,7 @@
         <label class="inline-flex items-center gap-2 mt-1">
           <input type="checkbox" name="{{ field.name }}" value="1" {{ 'checked' if item.get(field.name) else '' }}
                  class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary">
-          <span class="text-sm text-slate-600">Да</span>
+          <span class="text-sm text-slate-600">{{ _('Да') }}</span>
         </label>
       {% else %}
         <input type="text" name="{{ field.name }}" value="{{ item.get(field.name) or '' }}"
@@ -48,11 +48,11 @@
     <div class="flex gap-2 pt-2">
       <button type="submit"
               class="px-5 py-2 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition-colors">
-        Сохранить
+        {{ _('Сохранить') }}
       </button>
       <a href="/catalogs/{{ catalog.name }}"
          class="px-5 py-2 border border-surface-border text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
-        Отмена
+        {{ _('Отмена') }}
       </a>
     </div>
   </form>

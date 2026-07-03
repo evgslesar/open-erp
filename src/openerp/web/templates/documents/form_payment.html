@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl space-y-5" x-data="paymentAllocationForm({{ document | tojson }}, {{ (references.get('counterparty_id') or []) | tojson }})">
+  <div>
+    <nav class="text-xs text-slate-400 mb-1">
+      <a href="/" class="hover:text-primary">{{ _('Главная') }}</a>
+      <span class="mx-1">/</span>
+      <a href="/documents/{{ document_def.name }}" class="hover:text-primary">{{ _(document_def.label) }}</a>
+      <span class="mx-1">/</span>
+      <span>{{ _('редактирование') if document.id else _('новый') }}</span>
+    </nav>
+    <h1 class="text-xl font-semibold text-primary-dark">
+      {{ _(document_def.label) }}{% if document.number %} <span class="num text-slate-400">{{ document.number }}</span>{% endif %}
+    </h1>
+  </div>
+
+  <form method="post" action="{{ action }}" class="space-y-5">
+    <div class="bg-surface-card border border-surface-border rounded-xl p-6">
+      <h2 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Шапка документа') }}</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">{{ _('Дата') }}</span>
+          <input type="date" name="date" value="{{ document.date or '' }}" required
+                 class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+        </label>
+        {% if document.id %}
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">{{ _('Номер') }}</span>
+          <input type="text" value="{{ document.number }}" readonly
+                 class="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm num bg-slate-50 text-slate-400">
+        </label>
+        {% endif %}
+        {% for field in document_def.fields %}
+        {% if field.name == 'direction' %}
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">{{ _(field.label) }} <span class="text-red-500">*</span></span>
+          <select name="direction" required
+                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow bg-white">
+            <option value="incoming" {{ 'selected' if document.get('direction') == 'incoming' else '' }}>{{ _('Приход') }}</option>
+            <option value="outgoing" {{ 'selected' if document.get('direction') == 'outgoing' else '' }}>{{ _('Расход') }}</option>
+          </select>
+        </label>
+        {% elif field.name not in ('allocation_document_type', 'allocation_document_id') %}
+        <label class="block">
+          <span class="text-sm font-medium text-slate-700">{{ _(field.label) }}{% if field.required %} <span class="text-red-500">*</span>{% endif %}</span>
+          {% if references and references.get(field.name) is not none %}
+          <select name="{{ field.name }}" {% if field.name == 'counterparty_id' %}@change="loadUnpaid()"{% endif %}
+                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow bg-white">
+            <option value="">{{ _('— выбрать —') }}</option>
+            {% for item in references[field.name] %}
+            <option value="{{ item.id }}" {{ 'selected' if document.get(field.name) == item.id else '' }}>{{ item.name }}</option>
+            {% endfor %}
+          </select>
+          {% elif field.type == 'integer' or field.type == 'money' %}
+          <input type="number" step="1" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}"
+                 class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+          {% else %}
+          <input type="text" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}"
+                 class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
+          {% endif %}
+        </label>
+        {% endif %}
+        {% endfor %}
+        <label class="block lg:col-span-2">
+          <span class="text-sm font-medium text-slate-700">{{ _('Документ-основание') }}</span>
+          <select @change="setAllocation($event.target.value)"
+                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow bg-white">
+            <option value="">{{ _('— без привязки —') }}</option>
+            <template x-for="doc in unpaidDocs" :key="doc.document_type + ':' + doc.document_id">
+              <option :value="doc.document_type + ':' + doc.document_id"
+                      :selected="allocationKey === (doc.document_type + ':' + doc.document_id)"
+                      x-text="doc.document_type + ' ' + doc.document_number + ' (' + doc.document_date + ') — ' + doc.unpaid_minor"></option>
+            </template>
+          </select>
+          <input type="hidden" name="allocation_document_type" :value="allocationType">
+          <input type="hidden" name="allocation_document_id" :value="allocationId">
+          <p class="mt-1 text-xs text-slate-400" x-show="selectedUnpaid > 0">
+            {{ _('Неоплаченный остаток:') }} <span class="num" x-text="selectedUnpaid"></span>
+          </p>
+        </label>
+      </div>
+      <label class="block mt-4">
+        <span class="text-sm font-medium text-slate-700">{{ _('Комментарий') }}</span>
+        <textarea name="comment" rows="2"
+                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">{{ document.get('comment') or '' }}</textarea>
+      </label>
+    </div>
+
+    <div class="flex gap-2">
+      <button type="submit"
+              class="px-5 py-2.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition-colors">
+        {{ _('Сохранить') }}
+      </button>
+      <a href="/documents/{{ document_def.name }}"
+         class="px-5 py-2.5 border border-surface-border text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+        {{ _('Отмена') }}
+      </a>
+    </div>
+  </form>
+</div>
+
+<script>
+function paymentAllocationForm(initialDoc, counterparties) {
+  const allocType = initialDoc.allocation_document_type || '';
+  const allocId = initialDoc.allocation_document_id || '';
+  const allocationKey = allocType && allocId ? `${allocType}:${allocId}` : '';
+  return {
+    unpaidDocs: [],
+    allocationType: allocType,
+    allocationId: allocId || '',
+    allocationKey,
+    selectedUnpaid: 0,
+    async loadUnpaid() {
+      const select = document.querySelector('[name="counterparty_id"]');
+      const counterpartyId = select ? select.value : '';
+      if (!counterpartyId) {
+        this.unpaidDocs = [];
+        return;
+      }
+      const resp = await fetch(`/api/unpaid-documents?counterparty_id=${counterpartyId}`);
+      const data = await resp.json();
+      this.unpaidDocs = data.items || [];
+      this.updateSelectedUnpaid();
+    },
+    setAllocation(value) {
+      if (!value) {
+        this.allocationType = '';
+        this.allocationId = '';
+        this.allocationKey = '';
+        this.selectedUnpaid = 0;
+        return;
+      }
+      const [docType, docId] = value.split(':');
+      this.allocationType = docType;
+      this.allocationId = docId;
+      this.allocationKey = value;
+      this.updateSelectedUnpaid();
+    },
+    updateSelectedUnpaid() {
+      const found = this.unpaidDocs.find(
+        (doc) => `${doc.document_type}:${doc.document_id}` === this.allocationKey
+      );
+      this.selectedUnpaid = found ? found.unpaid_minor : 0;
+    },
+    init() {
+      if (initialDoc.counterparty_id) {
+        this.loadUnpaid();
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

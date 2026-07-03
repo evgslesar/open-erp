@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -11,8 +11,9 @@ from sqlalchemy.engine import Connection
 from openerp.core.context import RequestContext
 from openerp.core.decimal import to_decimal
 from openerp.core.metadata import MetadataRegistry
-from openerp.core.naming import catalog_table
+from openerp.core.naming import catalog_table, document_table
 from openerp.core.registers import RegisterService
+from openerp.modules.trade.settlements import unpaid_documents
 
 
 def _catalog_name_map(
@@ -37,13 +38,48 @@ def stock_balance_report(
     on_date: date | None = None,
 ) -> list[dict]:
     service = RegisterService(connection, registry, context)
-    rows = service.balance("stock", on_date or date.today())
+    on_date = on_date or date.today()
+    stock_rows = service.balance("stock", on_date)
+    reserved_rows = service.balance("stock_reserved", on_date)
+    reserved_map: dict[tuple[Any, Any], Decimal] = {}
+    for row in reserved_rows:
+        key = (row.get("warehouse_id"), row.get("product_id"))
+        reserved_map[key] = to_decimal(row.get("quantity"))
+
     products = _catalog_name_map(connection, "product", context.organization_id)
     warehouses = _catalog_name_map(connection, "warehouse", context.organization_id)
-    for row in rows:
-        row["product_name"] = products.get(row.get("product_id"), row.get("product_id"))
-        row["warehouse_name"] = warehouses.get(row.get("warehouse_id"), row.get("warehouse_id"))
-    return rows
+    result: list[dict] = []
+    seen_keys: set[tuple[Any, Any]] = set()
+    for row in stock_rows:
+        key = (row.get("warehouse_id"), row.get("product_id"))
+        seen_keys.add(key)
+        quantity = to_decimal(row.get("quantity"))
+        reserved = reserved_map.get(key, Decimal("0"))
+        result.append(
+            {
+                **row,
+                "product_name": products.get(row.get("product_id"), row.get("product_id")),
+                "warehouse_name": warehouses.get(row.get("warehouse_id"), row.get("warehouse_id")),
+                "reserved_quantity": reserved,
+                "available_quantity": quantity - reserved,
+            }
+        )
+    for row in reserved_rows:
+        key = (row.get("warehouse_id"), row.get("product_id"))
+        if key in seen_keys:
+            continue
+        reserved = to_decimal(row.get("quantity"))
+        result.append(
+            {
+                **row,
+                "quantity": Decimal("0"),
+                "product_name": products.get(row.get("product_id"), row.get("product_id")),
+                "warehouse_name": warehouses.get(row.get("warehouse_id"), row.get("warehouse_id")),
+                "reserved_quantity": reserved,
+                "available_quantity": -reserved,
+            }
+        )
+    return result
 
 
 def sales_report(
@@ -216,6 +252,115 @@ def payment_calendar_report(
                 }
             )
     result.sort(key=lambda row: (row["due_date"], row["document_type"], row["document_id"]))
+    return result
+
+
+def _document_label(connection: Connection, doc_type: str, doc_id: int) -> str:
+    metadata = connection.engine._openerp_metadata
+    table_name = document_table(doc_type)
+    if table_name not in metadata.tables:
+        return f"{doc_type}/{doc_id}"
+    table = metadata.tables[table_name]
+    row = connection.execute(
+        select(table.c.number, table.c.date).where(table.c.id == doc_id)
+    ).first()
+    if row is None:
+        return f"{doc_type}/{doc_id}"
+    mapping = dict(row._mapping)
+    return f"{doc_type} {mapping['number']} ({mapping['date']})"
+
+
+def unpaid_documents_report(
+    connection: Connection,
+    registry: MetadataRegistry,
+    context: RequestContext,
+    counterparty_id: int | None = None,
+    on_date: date | None = None,
+) -> list[dict]:
+    del on_date
+    if counterparty_id is None:
+        return []
+    counterparties = _catalog_name_map(connection, "counterparty", context.organization_id)
+    rows = unpaid_documents(connection, context.organization_id, counterparty_id)
+    for row in rows:
+        row["counterparty_name"] = counterparties.get(counterparty_id, counterparty_id)
+    return rows
+
+
+def reconciliation_report(
+    connection: Connection,
+    registry: MetadataRegistry,
+    context: RequestContext,
+    counterparty_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    currency_id: int | None = None,
+    on_date: date | None = None,
+) -> list[dict]:
+    del on_date
+    if counterparty_id is None:
+        return []
+    end_date = date_to or date.today()
+    start_date = date_from or end_date.replace(day=1)
+    filters: dict[str, Any] = {"counterparty_id": counterparty_id}
+    if currency_id is not None:
+        filters["currency_id"] = currency_id
+
+    service = RegisterService(connection, registry, context)
+    opening_date = start_date - timedelta(days=1) if start_date > date.min else date.min
+    opening_rows = service.balance("settlements", opening_date, filters=filters)
+    opening_minor = sum(int(to_decimal(row["amount_minor"])) for row in opening_rows)
+
+    movements = service.movements(
+        "settlements",
+        start_date=start_date,
+        end_date=end_date,
+        filters=filters,
+    )
+    counterparties = _catalog_name_map(connection, "counterparty", context.organization_id)
+    currencies = _catalog_name_map(connection, "currency", context.organization_id)
+
+    result: list[dict[str, Any]] = [
+        {
+            "row_kind": "opening",
+            "period": start_date,
+            "document": "",
+            "description": "Входящий остаток",
+            "amount_minor": opening_minor,
+            "counterparty_name": counterparties.get(counterparty_id, counterparty_id),
+            "currency_name": currencies.get(currency_id, currency_id or ""),
+        }
+    ]
+    running = opening_minor
+    for move in movements:
+        amount = int(to_decimal(move["amount_minor"]))
+        running += amount
+        result.append(
+            {
+                "row_kind": "movement",
+                "period": move["period"],
+                "document": _document_label(
+                    connection,
+                    str(move["registrator_type"]),
+                    int(move["registrator_id"]),
+                ),
+                "description": str(move["registrator_type"]),
+                "amount_minor": amount,
+                "counterparty_name": counterparties.get(counterparty_id, counterparty_id),
+                "currency_name": currencies.get(move.get("currency_id"), move.get("currency_id")),
+            }
+        )
+    result.append(
+        {
+            "row_kind": "closing",
+            "period": end_date,
+            "document": "",
+            "description": "Исходящий остаток",
+            "amount_minor": running,
+            "counterparty_name": counterparties.get(counterparty_id, counterparty_id),
+            "currency_name": currencies.get(currency_id, currency_id or ""),
+        }
+    )
     return result
 
 

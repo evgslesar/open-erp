@@ -5,28 +5,28 @@
 <div class="space-y-4">
   <div>
     <nav class="text-xs text-slate-400 mb-1">
-      <a href="/" class="hover:text-primary">Главная</a>
+      <a href="/" class="hover:text-primary">{{ _('Главная') }}</a>
       <span class="mx-1">/</span>
-      <span>Аудит</span>
+      <span>{{ _('Аудит') }}</span>
     </nav>
-    <h1 class="text-xl font-semibold text-primary-dark">Журнал аудита</h1>
+    <h1 class="text-xl font-semibold text-primary-dark">{{ _('Журнал аудита') }}</h1>
   </div>
 
   <form method="get" action="/audit" class="flex flex-wrap items-end gap-3 bg-surface-card border border-surface-border rounded-xl p-4">
     <label class="block">
-      <span class="text-xs font-medium text-slate-500">С</span>
+      <span class="text-xs font-medium text-slate-500">{{ _('С') }}</span>
       <input type="date" name="date_from" value="{{ date_from or '' }}" class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm num">
     </label>
     <label class="block">
-      <span class="text-xs font-medium text-slate-500">По</span>
+      <span class="text-xs font-medium text-slate-500">{{ _('По') }}</span>
       <input type="date" name="date_to" value="{{ date_to or '' }}" class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm num">
     </label>
     <label class="block">
-      <span class="text-xs font-medium text-slate-500">Операция</span>
+      <span class="text-xs font-medium text-slate-500">{{ _('Операция') }}</span>
       <input type="text" name="operation" value="{{ operation or '' }}" placeholder="create, update..."
              class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm">
     </label>
-    <button type="submit" class="px-4 py-1.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg">Применить</button>
+    <button type="submit" class="px-4 py-1.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg">{{ _('Применить') }}</button>
   </form>
 
   <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
@@ -34,9 +34,9 @@
       <table class="w-full text-sm">
         <thead>
           <tr class="bg-slate-50 border-b border-surface-border text-left">
-            <th class="px-4 py-3 font-medium text-slate-500">Время</th>
-            <th class="px-4 py-3 font-medium text-slate-500">Объект</th>
-            <th class="px-4 py-3 font-medium text-slate-500">Операция</th>
+            <th class="px-4 py-3 font-medium text-slate-500">{{ _('Время') }}</th>
+            <th class="px-4 py-3 font-medium text-slate-500">{{ _('Объект') }}</th>
+            <th class="px-4 py-3 font-medium text-slate-500">{{ _('Операция') }}</th>
             <th class="px-4 py-3 font-medium text-slate-500">ID</th>
           </tr>
         </thead>
@@ -49,7 +49,7 @@
             <td class="px-4 py-3 text-slate-400 num">{{ row.object_id or '' }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="4" class="px-4 py-8 text-center text-slate-400">Нет записей</td></tr>
+          <tr><td colspan="4" class="px-4 py-8 text-center text-slate-400">{{ _('Нет записей') }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

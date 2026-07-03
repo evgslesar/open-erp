@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
@@ -120,6 +120,21 @@ def _get_or_create_catalog(
     return repository.create_catalog_item(catalog_name, {"name": name, **values})
 
 
+def _doc_date(days_ago: int) -> date:
+    return date.today() - timedelta(days=days_ago)
+
+
+def _goods_line(product_id: int, quantity: str, price: str, rub_id: int) -> dict:
+    amount_minor = int(float(quantity) * float(price) * 100)
+    return {
+        "product_id": product_id,
+        "quantity": quantity,
+        "price": price,
+        "amount_minor": amount_minor,
+        "currency_id": rub_id,
+    }
+
+
 def ensure_demo_cash_data(
     connection: Connection,
     registry,
@@ -153,11 +168,23 @@ def ensure_demo_cash_data(
         'ООО "Поставщик Север"',
         {"tax_id": "7701234567"},
     )
+    supplier_opt_id = _get_or_create_catalog(
+        repository,
+        "counterparty",
+        'АО "ТоргОпт"',
+        {"tax_id": "7709876543"},
+    )
     customer_id = _get_or_create_catalog(
         repository,
         "counterparty",
         'ИП Иванов Сергей Петрович',
         {"tax_id": "503212345678"},
+    )
+    cafe_id = _get_or_create_catalog(
+        repository,
+        "counterparty",
+        'ООО "Кафе Уют"',
+        {"tax_id": "7705551234"},
     )
     customer_payment_category_id = _get_or_create_catalog(
         repository,
@@ -184,50 +211,89 @@ def ensure_demo_cash_data(
         {"type": "bank", "currency_id": rub_id},
     )
 
-    bank_incoming_id = repository.create_document(
-        "bank_payment",
-        {
-            "date": date.today(),
-            "counterparty_id": customer_id,
-            "money_account_id": bank_account_id,
-            "cash_flow_category_id": customer_payment_category_id,
-            "direction": "incoming",
-            "amount_minor": 495000,
-            "currency_id": rub_id,
-            "comment": "Оплата покупателя за реализацию",
-        },
-    )
-    poster.post("bank_payment", bank_incoming_id)
-
-    cash_incoming_id = repository.create_document(
-        "cash_payment",
-        {
-            "date": date.today(),
-            "counterparty_id": customer_id,
-            "money_account_id": cash_account_id,
-            "cash_flow_category_id": customer_payment_category_id,
-            "direction": "incoming",
-            "amount_minor": 80000,
-            "currency_id": rub_id,
-            "comment": "Розничная выручка в кассу",
-        },
-    )
-    poster.post("cash_payment", cash_incoming_id)
-
-    cash_outgoing_id = repository.create_document(
-        "cash_payment",
-        {
-            "date": date.today(),
-            "counterparty_id": supplier_id,
-            "money_account_id": cash_account_id,
-            "cash_flow_category_id": supplier_payment_category_id,
-            "direction": "outgoing",
-            "amount_minor": 25000,
-            "currency_id": rub_id,
-            "comment": "Частичная оплата поставщику из кассы",
-        },
-    )
-    poster.post("cash_payment", cash_outgoing_id)
+    payments = [
+        (
+            "bank_payment",
+            {
+                "date": _doc_date(11),
+                "counterparty_id": customer_id,
+                "money_account_id": bank_account_id,
+                "cash_flow_category_id": customer_payment_category_id,
+                "direction": "incoming",
+                "amount_minor": 495000,
+                "currency_id": rub_id,
+                "comment": "Оплата покупателя за реализацию",
+            },
+        ),
+        (
+            "bank_payment",
+            {
+                "date": _doc_date(7),
+                "counterparty_id": cafe_id,
+                "money_account_id": bank_account_id,
+                "cash_flow_category_id": customer_payment_category_id,
+                "direction": "incoming",
+                "amount_minor": 800000,
+                "currency_id": rub_id,
+                "comment": "Частичная оплата от кафе",
+            },
+        ),
+        (
+            "cash_payment",
+            {
+                "date": _doc_date(13),
+                "counterparty_id": customer_id,
+                "money_account_id": cash_account_id,
+                "cash_flow_category_id": customer_payment_category_id,
+                "direction": "incoming",
+                "amount_minor": 200000,
+                "currency_id": rub_id,
+                "comment": "Розничная выручка в кассу",
+            },
+        ),
+        (
+            "cash_payment",
+            {
+                "date": _doc_date(6),
+                "counterparty_id": customer_id,
+                "money_account_id": cash_account_id,
+                "cash_flow_category_id": customer_payment_category_id,
+                "direction": "incoming",
+                "amount_minor": 150000,
+                "currency_id": rub_id,
+                "comment": "Выручка магазина за выходные",
+            },
+        ),
+        (
+            "cash_payment",
+            {
+                "date": _doc_date(5),
+                "counterparty_id": supplier_id,
+                "money_account_id": cash_account_id,
+                "cash_flow_category_id": supplier_payment_category_id,
+                "direction": "outgoing",
+                "amount_minor": 25000,
+                "currency_id": rub_id,
+                "comment": "Частичная оплата поставщику из кассы",
+            },
+        ),
+        (
+            "cash_payment",
+            {
+                "date": _doc_date(3),
+                "counterparty_id": supplier_opt_id,
+                "money_account_id": cash_account_id,
+                "cash_flow_category_id": supplier_payment_category_id,
+                "direction": "outgoing",
+                "amount_minor": 50000,
+                "currency_id": rub_id,
+                "comment": "Оплата поставщику за воду и мёд",
+            },
+        ),
+    ]
+    for doc_type, header in payments:
+        doc_id = repository.create_document(doc_type, header)
+        poster.post(doc_type, doc_id)
     return True
 
 
@@ -238,104 +304,196 @@ def _seed_demo_trade_documents(
     main_warehouse_id: int,
     shop_warehouse_id: int,
     supplier_id: int,
+    supplier_opt_id: int,
     customer_id: int,
+    cafe_id: int,
+    petrova_id: int,
     tea_id: int,
     coffee_id: int,
     sugar_id: int,
+    milk_id: int,
+    cookies_id: int,
+    water_id: int,
+    honey_id: int,
 ) -> None:
-    receipt_id = repository.create_document(
+    main_receipt_id = repository.create_document(
         "receipt",
         {
-            "date": date.today(),
+            "date": _doc_date(25),
             "counterparty_id": supplier_id,
             "warehouse_id": main_warehouse_id,
             "comment": "Поступление товаров от российского поставщика",
         },
         {
             "lines": [
-                {
-                    "product_id": tea_id,
-                    "quantity": "120",
-                    "price": "100.00",
-                    "amount_minor": 1200000,
-                    "currency_id": rub_id,
-                },
-                {
-                    "product_id": coffee_id,
-                    "quantity": "80",
-                    "price": "320.00",
-                    "amount_minor": 2560000,
-                    "currency_id": rub_id,
-                },
-                {
-                    "product_id": sugar_id,
-                    "quantity": "200",
-                    "price": "75.00",
-                    "amount_minor": 1500000,
-                    "currency_id": rub_id,
-                },
+                _goods_line(tea_id, "200", "100.00", rub_id),
+                _goods_line(coffee_id, "150", "320.00", rub_id),
+                _goods_line(sugar_id, "300", "75.00", rub_id),
+                _goods_line(milk_id, "120", "65.00", rub_id),
+                _goods_line(cookies_id, "100", "90.00", rub_id),
             ]
         },
     )
-    poster.post("receipt", receipt_id)
+    poster.post("receipt", main_receipt_id)
 
-    sale_id = repository.create_document(
-        "sale",
+    opt_receipt_id = repository.create_document(
+        "receipt",
         {
-            "date": date.today(),
-            "counterparty_id": customer_id,
+            "date": _doc_date(22),
+            "counterparty_id": supplier_opt_id,
             "warehouse_id": main_warehouse_id,
-            "comment": "Реализация покупателю",
+            "comment": "Поступление напитков и мёда",
         },
         {
             "lines": [
-                {
-                    "product_id": tea_id,
-                    "quantity": "15",
-                    "price": "150.00",
-                    "amount_minor": 225000,
-                    "currency_id": rub_id,
-                },
-                {
-                    "product_id": coffee_id,
-                    "quantity": "6",
-                    "price": "450.00",
-                    "amount_minor": 270000,
-                    "currency_id": rub_id,
-                },
+                _goods_line(water_id, "250", "30.00", rub_id),
+                _goods_line(honey_id, "60", "280.00", rub_id),
+                _goods_line(cookies_id, "80", "88.00", rub_id),
             ]
         },
     )
-    poster.post("sale", sale_id)
+    poster.post("receipt", opt_receipt_id)
+
+    transfer_id = repository.create_document(
+        "transfer",
+        {
+            "date": _doc_date(18),
+            "source_warehouse_id": main_warehouse_id,
+            "destination_warehouse_id": shop_warehouse_id,
+            "comment": "Пополнение розничного магазина",
+        },
+        {
+            "lines": [
+                {"product_id": tea_id, "quantity": "40"},
+                {"product_id": water_id, "quantity": "80"},
+                {"product_id": cookies_id, "quantity": "30"},
+            ]
+        },
+    )
+    poster.post("transfer", transfer_id)
 
     shop_receipt_id = repository.create_document(
         "receipt",
         {
-            "date": date.today(),
+            "date": _doc_date(16),
             "counterparty_id": supplier_id,
             "warehouse_id": shop_warehouse_id,
             "comment": "Оприходование товара в розничном магазине",
         },
         {
             "lines": [
-                {
-                    "product_id": tea_id,
-                    "quantity": "25",
-                    "price": "100.00",
-                    "amount_minor": 250000,
-                    "currency_id": rub_id,
-                },
-                {
-                    "product_id": sugar_id,
-                    "quantity": "40",
-                    "price": "75.00",
-                    "amount_minor": 300000,
-                    "currency_id": rub_id,
-                },
+                _goods_line(tea_id, "30", "100.00", rub_id),
+                _goods_line(sugar_id, "50", "75.00", rub_id),
+                _goods_line(milk_id, "40", "65.00", rub_id),
             ]
         },
     )
     poster.post("receipt", shop_receipt_id)
+
+    order_id = repository.create_document(
+        "order",
+        {
+            "date": _doc_date(8),
+            "counterparty_id": petrova_id,
+            "warehouse_id": main_warehouse_id,
+            "comment": "Заказ покупателя на чай и мёд",
+        },
+        {
+            "lines": [
+                _goods_line(tea_id, "8", "150.00", rub_id),
+                _goods_line(honey_id, "10", "350.00", rub_id),
+            ]
+        },
+    )
+    poster.post("order", order_id)
+
+    sale_id = repository.create_document(
+        "sale",
+        {
+            "date": _doc_date(12),
+            "counterparty_id": customer_id,
+            "warehouse_id": main_warehouse_id,
+            "comment": "Реализация покупателю",
+        },
+        {
+            "lines": [
+                _goods_line(tea_id, "15", "150.00", rub_id),
+                _goods_line(coffee_id, "6", "450.00", rub_id),
+            ]
+        },
+    )
+    poster.post("sale", sale_id)
+
+    cafe_sale_id = repository.create_document(
+        "sale",
+        {
+            "date": _doc_date(9),
+            "counterparty_id": cafe_id,
+            "warehouse_id": main_warehouse_id,
+            "comment": "Поставка в кафе",
+        },
+        {
+            "lines": [
+                _goods_line(coffee_id, "12", "450.00", rub_id),
+                _goods_line(milk_id, "30", "85.00", rub_id),
+                _goods_line(cookies_id, "25", "120.00", rub_id),
+            ]
+        },
+    )
+    poster.post("sale", cafe_sale_id)
+
+    petrova_sale_id = repository.create_document(
+        "sale",
+        {
+            "date": _doc_date(7),
+            "counterparty_id": petrova_id,
+            "warehouse_id": main_warehouse_id,
+            "based_on_order_id": order_id,
+            "comment": "Отгрузка по заказу покупателя",
+        },
+        {
+            "lines": [
+                _goods_line(tea_id, "8", "150.00", rub_id),
+                _goods_line(honey_id, "10", "350.00", rub_id),
+            ]
+        },
+    )
+    poster.post("sale", petrova_sale_id)
+
+    retail_sale_id = repository.create_document(
+        "sale",
+        {
+            "date": _doc_date(3),
+            "counterparty_id": customer_id,
+            "warehouse_id": shop_warehouse_id,
+            "comment": "Розничная продажа в магазине",
+        },
+        {
+            "lines": [
+                _goods_line(sugar_id, "15", "95.00", rub_id),
+                _goods_line(water_id, "50", "45.00", rub_id),
+                _goods_line(tea_id, "5", "160.00", rub_id),
+            ]
+        },
+    )
+    poster.post("sale", retail_sale_id)
+
+    recent_sale_id = repository.create_document(
+        "sale",
+        {
+            "date": _doc_date(1),
+            "counterparty_id": cafe_id,
+            "warehouse_id": main_warehouse_id,
+            "comment": "Дополнительная поставка напитков",
+        },
+        {
+            "lines": [
+                _goods_line(water_id, "40", "45.00", rub_id),
+                _goods_line(milk_id, "20", "85.00", rub_id),
+            ]
+        },
+    )
+    poster.post("sale", recent_sale_id)
 
 
 def seed_demo(connection: Connection, registry) -> None:
@@ -361,9 +519,21 @@ def seed_demo(connection: Connection, registry) -> None:
             "counterparty",
             {"name": 'ООО "Поставщик Север"', "tax_id": "7701234567"},
         )
+        supplier_opt_id = repository.create_catalog_item(
+            "counterparty",
+            {"name": 'АО "ТоргОпт"', "tax_id": "7709876543"},
+        )
         customer_id = repository.create_catalog_item(
             "counterparty",
             {"name": 'ИП Иванов Сергей Петрович', "tax_id": "503212345678"},
+        )
+        cafe_id = repository.create_catalog_item(
+            "counterparty",
+            {"name": 'ООО "Кафе Уют"', "tax_id": "7705551234"},
+        )
+        petrova_id = repository.create_catalog_item(
+            "counterparty",
+            {"name": "ИП Петрова Мария Владимировна", "tax_id": "503298765432"},
         )
         tea_id = repository.create_catalog_item(
             "product",
@@ -377,6 +547,22 @@ def seed_demo(connection: Connection, registry) -> None:
             "product",
             {"name": "Сахар-песок, 1 кг", "sku": "SUG-001", "unit": "кг"},
         )
+        milk_id = repository.create_catalog_item(
+            "product",
+            {"name": "Молоко ультрапастеризованное, 1 л", "sku": "MLK-001", "unit": "шт"},
+        )
+        cookies_id = repository.create_catalog_item(
+            "product",
+            {"name": "Печенье «Юбилейное», 400 г", "sku": "BIS-400", "unit": "шт"},
+        )
+        water_id = repository.create_catalog_item(
+            "product",
+            {"name": "Вода минеральная, 0.5 л", "sku": "WTR-050", "unit": "шт"},
+        )
+        honey_id = repository.create_catalog_item(
+            "product",
+            {"name": "Мёд цветочный, 250 г", "sku": "HON-250", "unit": "шт"},
+        )
         _seed_demo_trade_documents(
             repository,
             poster,
@@ -384,10 +570,17 @@ def seed_demo(connection: Connection, registry) -> None:
             main_warehouse_id,
             shop_warehouse_id,
             supplier_id,
+            supplier_opt_id,
             customer_id,
+            cafe_id,
+            petrova_id,
             tea_id,
             coffee_id,
             sugar_id,
+            milk_id,
+            cookies_id,
+            water_id,
+            honey_id,
         )
 
     ensure_demo_cash_data(connection, registry, context, repository, poster)

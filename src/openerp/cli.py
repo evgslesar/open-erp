@@ -8,6 +8,7 @@ import uvicorn
 
 from openerp.bootstrap import init_engine
 from openerp.config import get_settings
+from openerp.i18n import compile_translation_catalogs
 from openerp.core.backup import backup_sqlite, verify_backup
 from openerp.core.context import RequestContext
 from openerp.core.import_export import (
@@ -32,6 +33,12 @@ app = typer.Typer(help="Open ERP command line")
 def init_db() -> None:
     init_engine()
     typer.echo("Database initialized")
+
+
+@app.command("compile-translations")
+def compile_translations() -> None:
+    count = compile_translation_catalogs()
+    typer.echo(f"Compiled {count} translation catalog(s)")
 
 
 @app.command("seed-demo")

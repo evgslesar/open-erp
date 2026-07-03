@@ -25,3 +25,15 @@ Posting handlers should only write movements through `RegisterService`, never wi
 ## Database portability
 
 Application code must not depend on SQLite-only or PostgreSQL-only SQL. Use SQLAlchemy Core expressions and keep tests running on SQLite. PostgreSQL is the target production database for active multi-user installations.
+
+## Internationalization (i18n)
+
+- Catalogs: `locales/{ru,en}/LC_MESSAGES/messages.po`
+- Source language: **Russian** (`ru` = identity, `en` = translation)
+- Templates: `{{ _('Строка') }}`; metadata labels: `{{ _(catalog.label) }}`
+- Locale selection: `web/locale.py` (cookie `lang` → `Accept-Language` → `OPENERP_DEFAULT_LOCALE`)
+- Switch route: `GET /set-locale/{locale}` (sets cookie, redirects to Referer)
+- Compile: `openerp compile-translations` (also runs on `init_engine`)
+- Context injection: `_base_context()` in `web/app.py` passes `_`, `locale`, `supported_locales`
+
+Do not use `{% set _ = ... %}` in Jinja2 templates — it overwrites the gettext callable `_`.

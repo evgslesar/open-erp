@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-4">
+  <div>
+    <nav class="text-xs text-slate-400 mb-1">
+      <a href="/" class="hover:text-primary">{{ _('Главная') }}</a>
+      <span class="mx-1">/</span>
+      <span>{{ _('Отчёты') }}</span>
+    </nav>
+    <h1 class="text-xl font-semibold text-primary-dark">{{ _(report.label) }}</h1>
+  </div>
+
+  <div class="flex flex-wrap items-end gap-3">
+    <form method="get" action="/reports/{{ report.name }}" class="flex flex-wrap items-end gap-3">
+      <label class="block">
+        <span class="text-xs font-medium text-slate-500">{{ _('Контрагент') }}</span>
+        <select name="counterparty_id" required
+                class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary outline-none bg-white">
+          <option value="">{{ _('— выбрать —') }}</option>
+          {% for item in filter_options.counterparty_id %}
+          <option value="{{ item.id }}" {% if counterparty_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="block">
+        <span class="text-xs font-medium text-slate-500">{{ _('С') }}</span>
+        <input type="date" name="date_from" value="{{ date_from or '' }}"
+               class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm num">
+      </label>
+      <label class="block">
+        <span class="text-xs font-medium text-slate-500">{{ _('По') }}</span>
+        <input type="date" name="date_to" value="{{ date_to or '' }}"
+               class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm num">
+      </label>
+      {% if filter_options.currency_id %}
+      <label class="block">
+        <span class="text-xs font-medium text-slate-500">{{ _('Валюта') }}</span>
+        <select name="currency_id"
+                class="mt-0.5 px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white">
+          <option value="">{{ _('Все') }}</option>
+          {% for item in filter_options.currency_id %}
+          <option value="{{ item.id }}" {% if currency_id == item.id %}selected{% endif %}>{{ item.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      <button type="submit"
+              class="px-4 py-1.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition-colors">
+        {{ _('Применить') }}
+      </button>
+    </form>
+
+    {% if counterparty_id and rows %}
+    <a href="/reports/reconciliation/print?counterparty_id={{ counterparty_id }}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if currency_id %}&currency_id={{ currency_id }}{% endif %}"
+       target="_blank"
+       class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-surface-border rounded-lg hover:bg-slate-50 text-slate-600">
+      {{ _('Печать') }}
+    </a>
+    {% endif %}
+  </div>
+
+  <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-slate-50 border-b border-surface-border text-left">
+            <th class="px-4 py-3 font-medium text-slate-500">{{ _('Дата') }}</th>
+            <th class="px-4 py-3 font-medium text-slate-500">{{ _('Документ') }}</th>
+            <th class="px-4 py-3 font-medium text-slate-500">{{ _('Описание') }}</th>
+            <th class="px-4 py-3 font-medium text-slate-500 text-right">{{ _('Сумма') }}</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-surface-border">
+          {% for row in rows %}
+          <tr class="hover:bg-slate-50 {% if row.row_kind != 'movement' %}bg-slate-50 font-medium{% endif %}">
+            <td class="px-4 py-2.5 text-slate-600 num">{{ row.period }}</td>
+            <td class="px-4 py-2.5 text-slate-600">{{ row.document }}</td>
+            <td class="px-4 py-2.5 text-slate-600">{{ _(row.description) if row.row_kind != 'movement' else row.description }}</td>
+            <td class="px-4 py-2.5 text-slate-600 num text-right">{{ row.amount_minor }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="px-4 py-8 text-center text-slate-400">{{ _('Выберите контрагента и период') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

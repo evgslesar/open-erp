@@ -16,10 +16,12 @@ from openerp.modules.trade.posting import (
 from openerp.modules.trade.reports import (
     cash_report,
     payment_calendar_report,
+    reconciliation_report,
     sales_report,
     settlements_report,
     stock_balance_report,
     turnover_report,
+    unpaid_documents_report,
 )
 
 
@@ -40,3 +42,5 @@ def register(registry: MetadataRegistry) -> None:
     registry.register_report_handler("trade.cash_report", cash_report)
     registry.register_report_handler("trade.turnover_report", turnover_report)
     registry.register_report_handler("trade.payment_calendar_report", payment_calendar_report)
+    registry.register_report_handler("trade.unpaid_documents_report", unpaid_documents_report)
+    registry.register_report_handler("trade.reconciliation_report", reconciliation_report)

@@ -13,6 +13,7 @@ authors = [
   { name = "Open ERP contributors" }
 ]
 dependencies = [
+  "babel>=2.15",
   "bcrypt>=4.1",
   "fastapi>=0.115",
   "itsdangerous>=2.1",

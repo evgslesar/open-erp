@@ -22,6 +22,7 @@ MVP покрывает:
 - [Структура проекта](#структура-проекта)
 - [Быстрый старт для разработчика](#быстрый-старт-для-разработчика)
 - [Конфигурация](#конфигурация)
+- [Интернационализация (i18n)](#интернационализация-i18n)
 - [База данных](#база-данных)
 - [Метаданные и модули](#метаданные-и-модули)
 - [Документы и проведение](#документы-и-проведение)
@@ -88,6 +89,7 @@ src/openerp/
 ├── config.py                 # настройки (env)
 ├── db.py                     # engine + transaction context
 ├── cli.py                    # команды Typer
+├── i18n.py                   # GNU gettext, compile_translation_catalogs
 ├── core/
 │   ├── audit.py              # аудит и журнал операций
 │   ├── backup.py             # резервная копия SQLite
@@ -108,19 +110,27 @@ src/openerp/
 │   ├── metadata.py           # описания модуля trade
 │   ├── migrations.py         # миграции модуля trade
 │   ├── posting.py            # обработчики проведения
+│   ├── orders.py             # статус исполнения заказов покупателя
+│   ├── settlements.py        # неоплаченные документы, привязка платежей
 │   ├── reports.py            # обработчики отчётов
 │   └── demo.py               # сид демо-данных
 └── web/
     ├── app.py                # FastAPI-приложение
+    ├── locale.py             # выбор локали (cookie, Accept-Language)
     └── templates/            # Jinja2-шаблоны
         ├── partials/
-        │   ├── app_header.html      # шапка с глобальным поиском
         │   ├── global_search.html   # поле поиска и выпадающие подсказки
         │   └── sidebar_panel.html
         ├── search.html              # страница результатов поиска
         ├── audit/list.html          # журнал аудита (админ)
         ├── operations/list.html     # журнал операций (админ)
+        ├── reports/
+        │   ├── reconciliation.html        # акт сверки
+        │   └── reconciliation_print.html  # печать акта сверки
         └── settings/closed_period.html
+scripts/
+└── build_translations.py     # карта строк для каталогов переводов
+locales/{ru,en}/LC_MESSAGES/  # messages.po / messages.mo
 tests/                         # pytest, TestClient
 data/                          # SQLite и .secret_key (создаются при init)
 backups/                       # вывод команды backup
@@ -171,8 +181,22 @@ $env:OPENERP_DATABASE_URL = "sqlite:///data/dev.db"
 |---------------------------|-------------------------------------------------------|---------------------------|
 | `OPENERP_DATABASE_URL`    | URL БД (SQLAlchemy)                                   | `sqlite:///data/open_erp.db` |
 | `OPENERP_SECRET_KEY`      | Ключ подписи cookie-сессий                            | авто-создаётся в `data/.secret_key` |
+| `OPENERP_DEFAULT_LOCALE`  | Язык интерфейса по умолчанию (`ru` или `en`)          | `ru` |
 
 `data/.secret_key` создаётся при первом запуске (48 байт из `secrets.token_urlsafe`). Удаление файла инвалилирует все сессии. Права доступа к файлу выставляются в `0o600` (на ОС, где это поддерживается).
+
+## Интернационализация (i18n)
+
+Интерфейс переводится через GNU gettext (как в Open Tracker):
+
+- каталоги: `locales/{ru,en}/LC_MESSAGES/messages.po`;
+- исходный язык — **русский** (в `ru` msgid = msgstr, в `en` — перевод);
+- шаблоны: `{{ _('Строка') }}`, метаданные: `{{ _(catalog.label) }}`;
+- выбор локали: cookie `lang` → заголовок `Accept-Language` → `OPENERP_DEFAULT_LOCALE`;
+- переключатель: 🌐 в боковом меню или `/set-locale/{ru|en}`;
+- компиляция: `openerp compile-translations` (также выполняется при `init-db`).
+
+Для добавления переводов отредактируйте `locales/en/LC_MESSAGES/messages.po` и запустите `openerp compile-translations`. Карта строк для генерации каталога: `scripts/build_translations.py`.
 
 ## База данных
 
@@ -309,7 +333,7 @@ def post_receipt(context: PostingContext) -> None:
 
 В модуле `trade` регистр `cash` хранит движения денежных средств по типу счета, денежному счету, статье ДДС и валюте. Контроль отрицательного остатка агрегирует деньги по `money_account_id` и `currency_id`, поэтому расход по одной статье ДДС может использовать общий доступный остаток счета. Отчёт `cash` также показывает итоговый остаток по денежному счету и валюте.
 
-Регистр `stock_reserved` хранит резервы по проведённым заказам покупателя. При проведении реализации с полем `based_on_order_id` резерв по строкам заказа снимается. Доступный остаток для продажи = `stock` − `stock_reserved`; отчёт «Остатки товаров» показывает физический остаток без вычета резерва.
+Регистр `stock_reserved` хранит резервы по проведённым заказам покупателя. При проведении реализации с полем `based_on_order_id` резерв по строкам заказа снимается. Доступный остаток для продажи = `stock` − `stock_reserved`; отчёт «Остатки товаров» показывает физический остаток, резерв и доступное количество.
 
 Отчёты (`openerp/modules/trade/reports.py`) — это функции `(connection, registry, context, **params) -> list[dict]`. Параметры приходят из query-string; веб-слой фильтрует их по сигнатуре (`web/app.py:_call_report_handler`), лишние параметры молча отбрасываются.
 
@@ -338,6 +362,8 @@ def stock_balance_report(
 | `cash` | Денежные средства на дату | `on_date` |
 | `turnover` | Оборотно-сальдовая ведомость по складу | `date_from`, `date_to` |
 | `payment_calendar` | Платежный календарь (суммы проведённых продаж и закупок) | `date_from`, `date_to` |
+| `unpaid_documents` | Неоплаченные реализации и поступления по контрагенту | `counterparty_id` |
+| `reconciliation` | Акт сверки взаиморасчётов | `counterparty_id`, `date_from`, `date_to`, `currency_id` |
 
 Сводка для главной страницы — `dashboard_summary(...)` в `openerp/modules/trade/reports.py`. Функция агрегирует остатки денег, продажи с начала месяца, взаиморасчёты, топ товаров и данные для графиков (Chart.js). Маршрут `/` передаёт результат в шаблон `index.html`.
 
@@ -372,6 +398,7 @@ def stock_balance_report(
 |--------|---------------------------------------------------|-------------------------------------------------------|
 | GET    | `/`                                               | Главная: сводка (KPI, графики, таблицы) + навигация   |
 | GET    | `/login`, POST `/login`, POST `/logout`           | Аутентификация                                        |
+| GET    | `/set-locale/{locale}`                            | Переключение языка интерфейса (`ru` / `en`)           |
 | GET    | `/search?q=`                                      | Страница результатов глобального поиска               |
 | GET    | `/api/search?q=&limit=`                           | JSON для выпадающих подсказок поиска                  |
 | GET    | `/catalogs/{name}`                                | Список элементов справочника                          |
@@ -390,18 +417,22 @@ def stock_balance_report(
 | GET    | `/documents/{name}/{id}`                          | Просмотр документа                                    |
 | GET    | `/documents/{name}/{id}/print`                    | Печатная форма                                        |
 | GET    | `/reports/{name}?on_date=&date_from=&date_to=`    | HTML-отчёт                                            |
+| GET    | `/reports/reconciliation/print?...`               | Печатная форма акта сверки                            |
 | GET    | `/reports/{name}/export?fmt=csv\|xlsx&...`        | Скачивание отчёта в CSV/XLSX                         |
 | GET    | `/settings/closed-period`                         | Закрытый период (админ)                               |
 | POST   | `/settings/closed-period`                         | Сохранить дату закрытия периода                       |
 | GET    | `/audit`                                          | Журнал аудита (админ)                                 |
 | GET    | `/operations`                                     | Журнал операций (админ)                               |
 | GET    | `/api/price?product_id=&price_type_id=&on_date=` | Цена из регистра сведений `prices`                    |
+| GET    | `/api/unpaid-documents?counterparty_id=&document_type=` | JSON неоплаченных реализаций/поступлений (форма платежа) |
 | GET    | `/api/v1/catalogs/{name}?q=&limit=`               | JSON-список справочника                               |
 | GET    | `/api/v1/catalogs/{name}/{id}`                    | JSON-элемент справочника                              |
 | GET    | `/api/v1/documents/{name}?date_from=&status=...`  | JSON-список документов (фильтры как в веб-журнале)    |
 | GET    | `/api/v1/documents/{name}/{id}`                   | JSON-документ с табличными частями                    |
 
 Создание поступления на основании заказа поставщику: `GET /documents/receipt/new?based_on=purchase_order/{id}` — подставляет контрагента, склад и строки.
+
+Создание платежа на основании реализации или поступления: `GET /documents/cash_payment/new?based_on=sale/{id}` или `.../bank_payment/new?based_on=receipt/{id}` — подставляет контрагента, направление и документ-основание. Формы кассового и банковского платежа используют шаблон `documents/form_payment.html`.
 
 Печатные формы реализации: `/documents/sale/{id}/print?form=invoice_html` (счёт), `?form=act_html` (акт). Без параметра `form` — стандартная HTML-форма документа.
 
@@ -414,8 +445,8 @@ def stock_balance_report(
 - `base.html` — общая разметка, шапка с поиском;
 - `login.html`, `error.html`, `index.html`, `search.html`;
 - `catalogs/list.html`, `form.html`, `import.html`;
-- `documents/list.html`, `form.html`, `view.html`, `print_form.html`, `print_invoice.html`, `print_act.html`;
-- `reports/generic.html`;
+- `documents/list.html`, `form.html`, `form_payment.html`, `view.html`, `print_form.html`, `print_invoice.html`, `print_act.html`;
+- `reports/generic.html`, `reconciliation.html`, `reconciliation_print.html`;
 - `audit/list.html`, `operations/list.html`, `settings/closed_period.html`.
 
 ## Импорт и экспорт
@@ -476,6 +507,7 @@ Cookie-сессии: `Starlette.SessionMiddleware` с `secret_key` из наст
 | Команда                                      | Описание                                                  |
 |----------------------------------------------|-----------------------------------------------------------|
 | `init-db`                                    | Создать схему БД                                          |
+| `compile-translations`                       | Скомпилировать `.po` → `.mo` каталоги переводов           |
 | `seed-demo`                                  | Загрузить демо-данные и администратора; повторный запуск дозаполняет денежные платежи, если их ещё нет |
 | `run [--host 127.0.0.1] [--port 8000]`        | Запустить uvicorn                                         |
 | `backup`                                     | Сделать резервную копию SQLite в `backups/`                |
@@ -506,9 +538,10 @@ Cookie-сессии: `Starlette.SessionMiddleware` с `secret_key` из наст
 - `test_reports_ui_data.py` — данные отчётов и экспорт;
 - `test_import.py` — импорт CSV/XLSX;
 - `test_search.py` — глобальный поиск, API, регистронезависимость по кириллице;
+- `test_settlements.py` — частичные оплаты, переплата, неоплаченные документы, исполнение заказов;
 - `test_trade_gaps.py` — резервы по заказам, возвраты, фильтры журналов, REST API, отчёты оборотов и платежного календаря, закрытый период в UI.
 
-Тестовая БД — временный файл в `tmp_path` (см. `tests/conftest.py:app_state`). Полный прогон: 95 тестов.
+Тестовая БД — временный файл в `tmp_path` (см. `tests/conftest.py:app_state`). Полный прогон: 100 тестов.
 
 ## Стиль кода
 

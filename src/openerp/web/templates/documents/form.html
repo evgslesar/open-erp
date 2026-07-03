@@ -4,41 +4,42 @@
 <div class="max-w-4xl space-y-5">
   <div>
     <nav class="text-xs text-slate-400 mb-1">
-      <a href="/" class="hover:text-primary">Главная</a>
+      <a href="/" class="hover:text-primary">{{ _('Главная') }}</a>
       <span class="mx-1">/</span>
-      <a href="/documents/{{ document_def.name }}" class="hover:text-primary">{{ document_def.label }}</a>
+      <a href="/documents/{{ document_def.name }}" class="hover:text-primary">{{ _(document_def.label) }}</a>
       <span class="mx-1">/</span>
-      <span>{{ 'редактирование' if document.id else 'новый' }}</span>
+      <span>{{ _('редактирование') if document.id else _('новый') }}</span>
     </nav>
     <h1 class="text-xl font-semibold text-primary-dark">
-      {{ document_def.label }}{% if document.number %} <span class="num text-slate-400">{{ document.number }}</span>{% endif %}
+      {{ _(document_def.label) }}{% if document.number %} <span class="num text-slate-400">{{ document.number }}</span>{% endif %}
     </h1>
   </div>
 
   <form method="post" action="{{ action }}" class="space-y-5">
     {# Header #}
     <div class="bg-surface-card border border-surface-border rounded-xl p-6">
-      <h2 class="text-sm font-semibold text-slate-700 mb-4">Шапка документа</h2>
+      <h2 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Шапка документа') }}</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <label class="block">
-          <span class="text-sm font-medium text-slate-700">Дата</span>
+          <span class="text-sm font-medium text-slate-700">{{ _('Дата') }}</span>
           <input type="date" name="date" value="{{ document.date or '' }}" required
                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
         </label>
         {% if document.id %}
         <label class="block">
-          <span class="text-sm font-medium text-slate-700">Номер</span>
+          <span class="text-sm font-medium text-slate-700">{{ _('Номер') }}</span>
           <input type="text" value="{{ document.number }}" readonly
                  class="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm num bg-slate-50 text-slate-400">
         </label>
         {% endif %}
         {% for field in document_def.fields %}
         <label class="block">
-          <span class="text-sm font-medium text-slate-700">{{ field.label }}{% if field.required %} <span class="text-red-500">*</span>{% endif %}</span>
+          <span class="text-sm font-medium text-slate-700">{{ _(field.label) }}{% if field.required %} <span class="text-red-500">*</span>{% endif %}</span>
           {% if references and references.get(field.name) is not none %}
           <select name="{{ field.name }}"
+                  {% if has_goods_lines and field.name == 'price_type_id' %}@change="refreshAllPrices()"{% endif %}
                   class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow bg-white">
-            <option value="">— выбрать —</option>
+            <option value="">{{ _('— выбрать —') }}</option>
             {% for item in references[field.name] %}
             <option value="{{ item.id }}" {{ 'selected' if document.get(field.name) == item.id else '' }}>{{ item.name }}</option>
             {% endfor %}
@@ -53,7 +54,7 @@
           <label class="inline-flex items-center gap-2 mt-2">
             <input type="checkbox" name="{{ field.name }}" value="1" {{ 'checked' if document.get(field.name) else '' }}
                    class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary">
-            <span class="text-sm text-slate-600">Да</span>
+            <span class="text-sm text-slate-600">{{ _('Да') }}</span>
           </label>
           {% else %}
           <input type="text" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}"
@@ -63,7 +64,7 @@
         {% endfor %}
       </div>
       <label class="block mt-4">
-        <span class="text-sm font-medium text-slate-700">Комментарий</span>
+        <span class="text-sm font-medium text-slate-700">{{ _('Комментарий') }}</span>
         <textarea name="comment" rows="2"
                   class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">{{ document.get('comment') or '' }}</textarea>
       </label>
@@ -73,13 +74,17 @@
     {% for part in document_def.table_parts %}
     {% set part_rows = form_table_rows[part.name] %}
     <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden"
-         x-data='{{ {"partName": part.name, "rows": part_rows} | tojson }}'>
+         {% if has_goods_lines and part.name == 'lines' %}
+         x-data="goodsLinesData({{ part_rows | tojson }}, {{ currency_scales | tojson }})"
+         {% else %}
+         x-data='{{ {"partName": part.name, "rows": part_rows} | tojson }}'
+         {% endif %}>
       <div class="flex items-center justify-between px-4 py-3 border-b border-surface-border">
-        <h2 class="text-sm font-semibold text-slate-700">{{ part.label }}</h2>
+        <h2 class="text-sm font-semibold text-slate-700">{{ _(part.label) }}</h2>
         <button type="button" @click="rows.push({})"
                 class="inline-flex items-center gap-1 px-2.5 py-1 text-xs border border-surface-border rounded-md hover:bg-slate-50 transition-colors text-slate-600">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-          Добавить
+          {{ _('Добавить') }}
         </button>
       </div>
       <div class="overflow-x-auto">
@@ -88,7 +93,7 @@
             <tr class="bg-slate-50 border-b border-surface-border text-left">
               <th class="px-3 py-2 font-medium text-slate-400 w-10">#</th>
               {% for field in part.fields %}
-              <th class="px-3 py-2 font-medium text-slate-500">{{ field.label }}</th>
+              <th class="px-3 py-2 font-medium text-slate-500">{{ _(field.label) }}</th>
               {% endfor %}
               <th class="px-3 py-2 w-10"></th>
             </tr>
@@ -102,6 +107,7 @@
                 <td class="px-3 py-1.5">
                   {% if references and references.get(field_name) is not none %}
                   <select :name="`${partName}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
+                          {% if field_name == 'product_id' and has_goods_lines %}@change="onProductChange(idx)"{% endif %}
                           class="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-primary outline-none bg-white">
                     <option value="">—</option>
                     {% for item in references[field_name] %}
@@ -113,6 +119,7 @@
                          class="w-full px-2 py-1 border border-slate-200 rounded text-xs num focus:ring-1 focus:ring-primary outline-none">
                   {% elif field.type == 'decimal' %}
                   <input type="text" inputmode="decimal" :name="`${partName}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
+                         {% if has_goods_lines and field_name in ('quantity', 'price') %}@input="recalcAmount(idx)"{% endif %}
                          class="w-full px-2 py-1 border border-slate-200 rounded text-xs num focus:ring-1 focus:ring-primary outline-none">
                   {% else %}
                   <input type="text" :name="`${partName}.${idx}.{{ field_name }}`" x-model="row.{{ field_name }}"
@@ -132,7 +139,7 @@
         </table>
       </div>
       {% if not part_rows %}
-      <p class="px-4 py-3 text-xs text-slate-400 text-center" x-show="rows.length === 0">Нет строк. Нажмите «Добавить».</p>
+      <p class="px-4 py-3 text-xs text-slate-400 text-center" x-show="rows.length === 0">{{ _('Нет строк. Нажмите «Добавить».') }}</p>
       {% endif %}
     </div>
     {% endfor %}
@@ -141,13 +148,60 @@
     <div class="flex gap-2">
       <button type="submit"
               class="px-5 py-2.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition-colors">
-        Сохранить
+        {{ _('Сохранить') }}
       </button>
       <a href="/documents/{{ document_def.name }}"
          class="px-5 py-2.5 border border-surface-border text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
-        Отмена
+        {{ _('Отмена') }}
       </a>
     </div>
   </form>
 </div>
+{% if has_goods_lines %}
+<script>
+function goodsLinesData(initialRows, currencyScales) {
+  return {
+    partName: 'lines',
+    rows: initialRows,
+    currencyScales: currencyScales || {},
+    getPriceTypeId() {
+      const el = document.querySelector('[name="price_type_id"]');
+      return el && el.value ? el.value : null;
+    },
+    getDocDate() {
+      const el = document.querySelector('[name="date"]');
+      return el ? el.value : '';
+    },
+    async onProductChange(idx) {
+      const row = this.rows[idx];
+      if (!row.product_id) return;
+      const params = new URLSearchParams({ product_id: String(row.product_id) });
+      const priceTypeId = this.getPriceTypeId();
+      if (priceTypeId) params.set('price_type_id', priceTypeId);
+      const docDate = this.getDocDate();
+      if (docDate) params.set('on_date', docDate);
+      const resp = await fetch('/api/price?' + params.toString());
+      const data = await resp.json();
+      if (data.price != null) {
+        row.price = String(data.price);
+        if (data.currency_id) row.currency_id = String(data.currency_id);
+        this.recalcAmount(idx);
+      }
+    },
+    recalcAmount(idx) {
+      const row = this.rows[idx];
+      const qty = parseFloat(row.quantity) || 0;
+      const price = parseFloat(row.price) || 0;
+      const scale = this.currencyScales[String(row.currency_id)] ?? 2;
+      row.amount_minor = Math.round(qty * price * Math.pow(10, scale));
+    },
+    refreshAllPrices() {
+      this.rows.forEach((_, idx) => {
+        if (this.rows[idx].product_id) this.onProductChange(idx);
+      });
+    },
+  };
+}
+</script>
+{% endif %}
 {% endblock %}

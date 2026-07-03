@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 
-{% block title %}Поиск: {{ query }} — Open ERP{% endblock %}
+{% block title %}{{ _('Поиск') }}: {{ query }} — Open ERP{% endblock %}
 
 {% block content %}
 <div class="space-y-6">
   <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-semibold text-primary-dark">Результаты поиска</h1>
+      <h1 class="text-2xl font-semibold text-primary-dark">{{ _('Результаты поиска') }}</h1>
       <p class="text-sm text-slate-500 mt-1">
         {% if total == 0 %}
-        По запросу «{{ query }}» ничего не найдено.
+        {{ _('По запросу «%(query)s» ничего не найдено.') % {'query': query} }}
         {% elif total == 1 %}
-        1 результат по запросу «{{ query }}».
+        {{ _('1 результат по запросу «%(query)s».') % {'query': query} }}
         {% else %}
-        {{ total }} результатов по запросу «{{ query }}».
+        {{ _('%(total)s результатов по запросу «%(query)s».') % {'total': total, 'query': query} }}
         {% endif %}
       </p>
     </div>
@@ -23,7 +23,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
         </svg>
         <input type="search" name="q" value="{{ query }}" autofocus
-               placeholder="Уточнить поиск..."
+               placeholder="{{ _('Уточнить поиск...') }}"
                class="w-full pl-9 pr-4 py-2 text-sm border border-surface-border rounded-lg focus:outline-none focus:border-primary bg-white">
       </div>
     </form>
@@ -44,8 +44,8 @@
             <span class="shrink-0 mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center text-xs font-medium
               {% if item.type == 'catalog' %}bg-primary/10 text-primary
               {% else %}bg-emerald-50 text-emerald-600{% endif %}">
-              {% if item.type == 'catalog' %}С
-              {% else %}Д{% endif %}
+              {% if item.type == 'catalog' %}{{ _('справочник')[0] | upper }}
+              {% else %}{{ _('документ')[0] | upper }}{% endif %}
             </span>
             <div class="min-w-0 flex-1">
               <p class="text-sm font-medium text-slate-700 truncate">{{ item.title }}</p>
@@ -54,7 +54,7 @@
               {% endif %}
             </div>
             <span class="text-xs text-slate-300 capitalize shrink-0">
-              {% if item.type == 'catalog' %}справочник{% else %}документ{% endif %}
+              {% if item.type == 'catalog' %}{{ _('справочник') }}{% else %}{{ _('документ') }}{% endif %}
             </span>
           </a>
         </li>
