@@ -4,9 +4,11 @@ import inspect
 import io
 import json
 from datetime import date
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.staticfiles import StaticFiles
 from markupsafe import Markup
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -53,8 +55,19 @@ from openerp.web.locale import select_locale, set_locale_cookie, translator
 
 templates = Jinja2Templates(directory="src/openerp/web/templates")
 templates.env.filters["money"] = format_money_minor
+
+
+def _tojson_default(value):
+    """JSON default handler: serialize dates/datetimes as ISO strings."""
+    import datetime
+
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
+    raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
+
+
 templates.env.filters["tojson"] = lambda value: Markup(
-    json.dumps(value, ensure_ascii=False)
+    json.dumps(value, ensure_ascii=False, default=_tojson_default)
 )
 
 
@@ -374,6 +387,11 @@ def create_app() -> FastAPI:
     engine, registry = init_engine()
     app = FastAPI(title="Open ERP")
     app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax")
+    # Serve vendored frontend assets (tailwind/alpine/htmx/chart.js) locally so
+    # the app works offline and tests don't depend on external CDNs.
+    static_dir = Path("src/openerp/web/static")
+    if static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     app.state.engine = engine
     app.state.registry = registry
 

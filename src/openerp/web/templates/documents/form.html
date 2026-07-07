@@ -15,14 +15,14 @@
     </h1>
   </div>
 
-  <form method="post" action="{{ action }}" class="space-y-5">
+  <form method="post" action="{{ action }}" class="space-y-5" data-testid="document-form">
     {# Header #}
     <div class="bg-surface-card border border-surface-border rounded-xl p-6">
       <h2 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Шапка документа') }}</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <label class="block">
           <span class="text-sm font-medium text-slate-700">{{ _('Дата') }}</span>
-          <input type="date" name="date" value="{{ document.date or '' }}" required
+          <input type="date" name="date" value="{{ document.date or '' }}" required data-testid="field-date"
                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
         </label>
         {% if document.id %}
@@ -36,7 +36,7 @@
         <label class="block">
           <span class="text-sm font-medium text-slate-700">{{ _(field.label) }}{% if field.required %} <span class="text-red-500">*</span>{% endif %}</span>
           {% if references and references.get(field.name) is not none %}
-          <select name="{{ field.name }}"
+          <select name="{{ field.name }}" data-testid="field-{{ field.name }}"
                   {% if has_goods_lines and field.name == 'price_type_id' %}@change="refreshAllPrices()"{% endif %}
                   class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow bg-white">
             <option value="">{{ _('— выбрать —') }}</option>
@@ -45,19 +45,19 @@
             {% endfor %}
           </select>
           {% elif field.type == 'integer' or field.type == 'money' %}
-          <input type="number" step="1" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}"
+          <input type="number" step="1" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}" data-testid="field-{{ field.name }}"
                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
           {% elif field.type == 'decimal' %}
-          <input type="text" inputmode="decimal" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}"
+          <input type="text" inputmode="decimal" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}" data-testid="field-{{ field.name }}"
                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
           {% elif field.type == 'boolean' %}
           <label class="inline-flex items-center gap-2 mt-2">
-            <input type="checkbox" name="{{ field.name }}" value="1" {{ 'checked' if document.get(field.name) else '' }}
+            <input type="checkbox" name="{{ field.name }}" value="1" {{ 'checked' if document.get(field.name) else '' }} data-testid="field-{{ field.name }}"
                    class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary">
             <span class="text-sm text-slate-600">{{ _('Да') }}</span>
           </label>
           {% else %}
-          <input type="text" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}"
+          <input type="text" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}" data-testid="field-{{ field.name }}"
                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
           {% endif %}
         </label>
@@ -75,13 +75,13 @@
     {% set part_rows = form_table_rows[part.name] %}
     <div class="bg-surface-card border border-surface-border rounded-xl overflow-hidden"
          {% if has_goods_lines and part.name == 'lines' %}
-         x-data="goodsLinesData({{ part_rows | tojson }}, {{ currency_scales | tojson }})"
+         x-data='goodsLinesData({{ part_rows | tojson }}, {{ currency_scales | tojson }})'
          {% else %}
          x-data='{{ {"partName": part.name, "rows": part_rows} | tojson }}'
          {% endif %}>
       <div class="flex items-center justify-between px-4 py-3 border-b border-surface-border">
         <h2 class="text-sm font-semibold text-slate-700">{{ _(part.label) }}</h2>
-        <button type="button" @click="rows.push({})"
+        <button type="button" @click="rows.push({})" data-testid="add-line"
                 class="inline-flex items-center gap-1 px-2.5 py-1 text-xs border border-surface-border rounded-md hover:bg-slate-50 transition-colors text-slate-600">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
           {{ _('Добавить') }}
@@ -100,7 +100,7 @@
           </thead>
           <tbody class="divide-y divide-surface-border">
             <template x-for="(row, idx) in rows" :key="idx">
-              <tr class="hover:bg-slate-50">
+              <tr class="hover:bg-slate-50" :data-testid="`line-row-${idx}`">
                 <td class="px-3 py-1.5 text-slate-400 num" x-text="idx + 1"></td>
                 {% for field in part.fields %}
                 {% set field_name = field.name %}
@@ -146,11 +146,11 @@
 
     {# Actions #}
     <div class="flex gap-2">
-      <button type="submit"
+      <button type="submit" data-testid="save"
               class="px-5 py-2.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition-colors">
         {{ _('Сохранить') }}
       </button>
-      <a href="/documents/{{ document_def.name }}"
+      <a href="/documents/{{ document_def.name }}" data-testid="cancel"
          class="px-5 py-2.5 border border-surface-border text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
         {{ _('Отмена') }}
       </a>

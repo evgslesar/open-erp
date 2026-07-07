@@ -13,10 +13,10 @@
     </h1>
   </div>
 
-  <form method="post" action="{{ action }}" class="bg-surface-card border border-surface-border rounded-xl p-6 space-y-4">
+  <form method="post" action="{{ action }}" class="bg-surface-card border border-surface-border rounded-xl p-6 space-y-4" data-testid="catalog-form">
     <label class="block">
       <span class="text-sm font-medium text-slate-700">{{ _('Наименование') }}</span>
-      <input type="text" name="name" value="{{ item.name or '' }}" required
+      <input type="text" name="name" value="{{ item.name or '' }}" required data-testid="field-name"
              class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
     </label>
 
@@ -24,33 +24,33 @@
     <label class="block">
       <span class="text-sm font-medium text-slate-700">{{ _(field.label) }}{% if field.required %} <span class="text-red-500">*</span>{% endif %}</span>
       {% if field.type == 'text' %}
-        <textarea name="{{ field.name }}" rows="3"
+        <textarea name="{{ field.name }}" rows="3" data-testid="field-{{ field.name }}"
                   class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">{{ item.get(field.name) or '' }}</textarea>
       {% elif field.type == 'integer' or field.type == 'money' %}
-        <input type="number" step="1" name="{{ field.name }}" value="{{ item.get(field.name) or '' }}"
+        <input type="number" step="1" name="{{ field.name }}" value="{{ item.get(field.name) or '' }}" data-testid="field-{{ field.name }}"
                class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
       {% elif field.type == 'decimal' %}
-        <input type="text" inputmode="decimal" name="{{ field.name }}" value="{{ item.get(field.name) or '' }}"
+        <input type="text" inputmode="decimal" name="{{ field.name }}" value="{{ item.get(field.name) or '' }}" data-testid="field-{{ field.name }}"
                class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
       {% elif field.type == 'boolean' %}
         <label class="inline-flex items-center gap-2 mt-1">
-          <input type="checkbox" name="{{ field.name }}" value="1" {{ 'checked' if item.get(field.name) else '' }}
+          <input type="checkbox" name="{{ field.name }}" value="1" {{ 'checked' if item.get(field.name) else '' }} data-testid="field-{{ field.name }}"
                  class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary">
           <span class="text-sm text-slate-600">{{ _('Да') }}</span>
         </label>
       {% else %}
-        <input type="text" name="{{ field.name }}" value="{{ item.get(field.name) or '' }}"
+        <input type="text" name="{{ field.name }}" value="{{ item.get(field.name) or '' }}" data-testid="field-{{ field.name }}"
                class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
       {% endif %}
     </label>
     {% endfor %}
 
     <div class="flex gap-2 pt-2">
-      <button type="submit"
+      <button type="submit" data-testid="save"
               class="px-5 py-2 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition-colors">
         {{ _('Сохранить') }}
       </button>
-      <a href="/catalogs/{{ catalog.name }}"
+      <a href="/catalogs/{{ catalog.name }}" data-testid="cancel"
          class="px-5 py-2 border border-surface-border text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
         {{ _('Отмена') }}
       </a>

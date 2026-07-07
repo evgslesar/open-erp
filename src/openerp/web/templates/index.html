@@ -184,7 +184,7 @@
 </div>
 
 {% if dashboard.cash_chart.labels or dashboard.stock_chart.labels or dashboard.sales_chart.labels %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="/static/vendor/chart.umd.min.js"></script>
 <script>
   const chartLocale = '{{ "ru-RU" if locale == "ru" else "en-US" }}';
   const chartDefaults = {

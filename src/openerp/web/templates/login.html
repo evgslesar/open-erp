@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/static/vendor/tailwind.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -34,7 +34,7 @@
     </div>
 
     {% if error %}
-    <div class="bg-red-500/20 border border-red-400/30 text-red-200 text-sm rounded-lg px-4 py-3 mb-4">
+    <div class="bg-red-500/20 border border-red-400/30 text-red-200 text-sm rounded-lg px-4 py-3 mb-4" data-testid="login-error">
       {{ error }}
     </div>
     {% endif %}
@@ -49,19 +49,19 @@
     {% endfor %}
   </div>
 
-    <form method="post" action="/login?next={{ next }}" class="bg-white rounded-xl shadow-xl p-6 space-y-4">
+    <form method="post" action="/login?next={{ next }}" class="bg-white rounded-xl shadow-xl p-6 space-y-4" data-testid="login-form">
       <label class="block">
         <span class="text-sm font-medium text-slate-700">Email</span>
-        <input type="email" name="email" required autofocus
+        <input type="email" name="email" required autofocus data-testid="email"
                value="admin@example.local"
                class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
       </label>
       <label class="block">
         <span class="text-sm font-medium text-slate-700">{{ _('Пароль') }}</span>
-        <input type="password" name="password" required
+        <input type="password" name="password" required data-testid="password"
                class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
       </label>
-      <button type="submit"
+      <button type="submit" data-testid="login-submit"
               class="w-full bg-primary hover:bg-primary-dark text-white font-medium py-2.5 rounded-lg transition-colors">
         {{ _('Войти') }}
       </button>

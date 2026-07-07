@@ -15,13 +15,13 @@
     </h1>
   </div>
 
-  <form method="post" action="{{ action }}" class="space-y-5">
+  <form method="post" action="{{ action }}" class="space-y-5" data-testid="document-form">
     <div class="bg-surface-card border border-surface-border rounded-xl p-6">
       <h2 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Шапка документа') }}</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <label class="block">
           <span class="text-sm font-medium text-slate-700">{{ _('Дата') }}</span>
-          <input type="date" name="date" value="{{ document.date or '' }}" required
+          <input type="date" name="date" value="{{ document.date or '' }}" required data-testid="field-date"
                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
         </label>
         {% if document.id %}
@@ -35,7 +35,7 @@
         {% if field.name == 'direction' %}
         <label class="block">
           <span class="text-sm font-medium text-slate-700">{{ _(field.label) }} <span class="text-red-500">*</span></span>
-          <select name="direction" required
+          <select name="direction" required data-testid="field-direction"
                   class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow bg-white">
             <option value="incoming" {{ 'selected' if document.get('direction') == 'incoming' else '' }}>{{ _('Приход') }}</option>
             <option value="outgoing" {{ 'selected' if document.get('direction') == 'outgoing' else '' }}>{{ _('Расход') }}</option>
@@ -45,7 +45,7 @@
         <label class="block">
           <span class="text-sm font-medium text-slate-700">{{ _(field.label) }}{% if field.required %} <span class="text-red-500">*</span>{% endif %}</span>
           {% if references and references.get(field.name) is not none %}
-          <select name="{{ field.name }}" {% if field.name == 'counterparty_id' %}@change="loadUnpaid()"{% endif %}
+          <select name="{{ field.name }}" data-testid="field-{{ field.name }}" {% if field.name == 'counterparty_id' %}@change="loadUnpaid()"{% endif %}
                   class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow bg-white">
             <option value="">{{ _('— выбрать —') }}</option>
             {% for item in references[field.name] %}
@@ -53,10 +53,10 @@
             {% endfor %}
           </select>
           {% elif field.type == 'integer' or field.type == 'money' %}
-          <input type="number" step="1" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}"
+          <input type="number" step="1" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}" data-testid="field-{{ field.name }}"
                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm num focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
           {% else %}
-          <input type="text" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}"
+          <input type="text" name="{{ field.name }}" value="{{ document.get(field.name) or '' }}" data-testid="field-{{ field.name }}"
                  class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">
           {% endif %}
         </label>
@@ -64,7 +64,7 @@
         {% endfor %}
         <label class="block lg:col-span-2">
           <span class="text-sm font-medium text-slate-700">{{ _('Документ-основание') }}</span>
-          <select @change="setAllocation($event.target.value)"
+          <select @change="setAllocation($event.target.value)" data-testid="allocation-select"
                   class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow bg-white">
             <option value="">{{ _('— без привязки —') }}</option>
             <template x-for="doc in unpaidDocs" :key="doc.document_type + ':' + doc.document_id">
@@ -73,8 +73,8 @@
                       x-text="doc.document_type + ' ' + doc.document_number + ' (' + doc.document_date + ') — ' + doc.unpaid_minor"></option>
             </template>
           </select>
-          <input type="hidden" name="allocation_document_type" :value="allocationType">
-          <input type="hidden" name="allocation_document_id" :value="allocationId">
+          <input type="hidden" name="allocation_document_type" :value="allocationType" data-testid="allocation-type">
+          <input type="hidden" name="allocation_document_id" :value="allocationId" data-testid="allocation-id">
           <p class="mt-1 text-xs text-slate-400" x-show="selectedUnpaid > 0">
             {{ _('Неоплаченный остаток:') }} <span class="num" x-text="selectedUnpaid"></span>
           </p>
@@ -82,17 +82,17 @@
       </div>
       <label class="block mt-4">
         <span class="text-sm font-medium text-slate-700">{{ _('Комментарий') }}</span>
-        <textarea name="comment" rows="2"
+        <textarea name="comment" rows="2" data-testid="field-comment"
                   class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-shadow">{{ document.get('comment') or '' }}</textarea>
       </label>
     </div>
 
     <div class="flex gap-2">
-      <button type="submit"
+      <button type="submit" data-testid="save"
               class="px-5 py-2.5 bg-primary hover:bg-primary-dark text-white text-sm font-medium rounded-lg transition-colors">
         {{ _('Сохранить') }}
       </button>
-      <a href="/documents/{{ document_def.name }}"
+      <a href="/documents/{{ document_def.name }}" data-testid="cancel"
          class="px-5 py-2.5 border border-surface-border text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
         {{ _('Отмена') }}
       </a>
