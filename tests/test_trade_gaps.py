@@ -7,7 +7,12 @@ from starlette.testclient import TestClient
 
 from openerp.bootstrap import init_engine
 from openerp.core.context import RequestContext
-from openerp.core.posting import DocumentPostingService, get_closed_period, set_closed_period
+from openerp.core.posting import (
+    DocumentPostingService,
+    InsufficientStockError,
+    get_closed_period,
+    set_closed_period,
+)
 from openerp.core.registers import RegisterService
 from openerp.core.repository import Repository
 from openerp.db import transaction
@@ -76,7 +81,10 @@ def test_catalog_name_search(app_state, context):
     engine, registry = app_state
     with transaction(engine) as connection:
         repository = Repository(connection, registry, context)
-        repository.create_catalog_item("product", {"name": "Alpha widget", "sku": "A1", "unit": "pcs"})
+        repository.create_catalog_item(
+            "product",
+            {"name": "Alpha widget", "sku": "A1", "unit": "pcs"},
+        )
         repository.create_catalog_item("product", {"name": "Beta part", "sku": "B1", "unit": "pcs"})
         rows = repository.list_catalog_items("product", q="alpha")
         assert len(rows) == 1
@@ -115,7 +123,7 @@ def test_order_reservation_blocks_sale(app_state, context):
         poster = DocumentPostingService(connection, registry, context)
         poster.post("receipt", receipt_id)
         poster.post("order", order_id)
-        with pytest.raises(Exception):
+        with pytest.raises(InsufficientStockError):
             poster.post("sale", sale_id)
 
 

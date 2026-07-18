@@ -227,3 +227,40 @@ def test_edit_form_initializes_alpine_rows(client):
     assert edit.status_code == 200
     assert "goodsLinesData" in edit.text or "x-data='{\"partName\": \"lines\"" in edit.text
     assert 'x-data="{ partName' not in edit.text
+
+
+def test_cash_payment_based_on_sale_prefills_allocation(client):
+    """Payment form Alpine x-data must use single-quoted attribute so JSON survives."""
+    test_client, master = client
+    # Seed a posted sale so based_on has a real document id.
+    receipt = test_client.post(
+        "/documents/receipt/new",
+        data={
+            "date": date.today().isoformat(),
+            "counterparty_id": str(master["counterparty_id"]),
+            "warehouse_id": str(master["warehouse_id"]),
+            "lines.0.product_id": str(master["product_id"]),
+            "lines.0.quantity": "5",
+            "lines.0.price": "100.00",
+            "lines.0.amount_minor": "50000",
+            "lines.0.currency_id": str(master["currency_id"]),
+        },
+        follow_redirects=False,
+    )
+    test_client.post(receipt.headers["location"] + "/post", follow_redirects=False)
+    sale = test_client.post(
+        "/documents/sale/new", data=_sale_form(master), follow_redirects=False
+    )
+    sale_url = sale.headers["location"]
+    test_client.post(sale_url + "/post", follow_redirects=False)
+    sale_id = int(sale_url.rstrip("/").split("/")[-1])
+
+    form = test_client.get(f"/documents/cash_payment/new?based_on=sale/{sale_id}")
+    assert form.status_code == 200
+    assert "paymentAllocationForm" in form.text
+    # Single-quoted x-data so embedded JSON double-quotes do not truncate Alpine.
+    assert "x-data='paymentAllocationForm(" in form.text
+    assert '"allocation_document_type": "sale"' in form.text
+    assert f'"allocation_document_id": {sale_id}' in form.text
+    assert 'data-testid="field-direction"' in form.text
+    assert "incoming" in form.text

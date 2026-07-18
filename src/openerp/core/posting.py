@@ -8,10 +8,10 @@ from sqlalchemy.engine import Connection
 
 from openerp.core.audit import log_operation
 from openerp.core.context import RequestContext
-from openerp.core.metadata import DocumentStatus, MetadataRegistry
-from openerp.core.repository import Repository
-from openerp.core.naming import catalog_table
 from openerp.core.decimal import to_decimal
+from openerp.core.metadata import DocumentStatus, MetadataRegistry
+from openerp.core.naming import catalog_table
+from openerp.core.repository import Repository
 from openerp.core.security import PermissionDenied, require_permission
 
 

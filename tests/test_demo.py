@@ -4,9 +4,9 @@ from datetime import date
 
 from openerp.bootstrap import init_engine
 from openerp.core.context import RequestContext
-from openerp.db import transaction
 from openerp.core.posting import DocumentPostingService
 from openerp.core.repository import Repository
+from openerp.db import transaction
 from openerp.modules.trade.demo import DEMO_PRODUCT_NAME, seed_demo
 from openerp.modules.trade.reports import cash_report
 

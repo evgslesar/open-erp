@@ -3,11 +3,11 @@ from __future__ import annotations
 from sqlalchemy.engine import Engine
 
 from openerp.config import get_settings
-from openerp.i18n import compile_translation_catalogs
 from openerp.core.metadata import MetadataRegistry
 from openerp.core.migrations import ModuleMigrator
 from openerp.core.schema import create_all
 from openerp.db import create_db_engine, transaction
+from openerp.i18n import compile_translation_catalogs
 from openerp.modules.trade import register as register_trade
 from openerp.modules.trade.migrations import trade_migrations
 

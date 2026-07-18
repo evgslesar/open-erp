@@ -3,7 +3,7 @@
 {% block title %}{{ _('Поиск') }}: {{ query }} — Open ERP{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
+<div class="space-y-6" data-testid="search-results">
   <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
     <div>
       <h1 class="text-2xl font-semibold text-primary-dark">{{ _('Результаты поиска') }}</h1>
@@ -40,7 +40,7 @@
       <ul class="divide-y divide-surface-border">
         {% for item in group.results %}
         <li>
-          <a href="{{ item.url }}" class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+          <a href="{{ item.url }}" data-testid="search-result" class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
             <span class="shrink-0 mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center text-xs font-medium
               {% if item.type == 'catalog' %}bg-primary/10 text-primary
               {% else %}bg-emerald-50 text-emerald-600{% endif %}">
@@ -48,7 +48,7 @@
               {% else %}{{ _('документ')[0] | upper }}{% endif %}
             </span>
             <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium text-slate-700 truncate">{{ item.title }}</p>
+              <p class="text-sm font-medium text-slate-700 truncate" data-testid="search-result-title">{{ item.title }}</p>
               {% if item.subtitle %}
               <p class="text-xs text-slate-400 mt-0.5 truncate">{{ item.subtitle }}</p>
               {% endif %}

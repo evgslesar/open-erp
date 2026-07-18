@@ -226,6 +226,16 @@ def test_web_import_catalog_via_upload(web_client):
     assert "U1" in response.text or "1 строк" in response.text
 
 
+def test_web_import_without_file_returns_error(web_client):
+    response = web_client.post(
+        "/catalogs/product/import",
+        data={"dry_run": "0"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert "Файл не выбран" in response.text
+
+
 def test_web_import_template_download(web_client):
     response = web_client.get("/catalogs/product/import-template")
     assert response.status_code == 200

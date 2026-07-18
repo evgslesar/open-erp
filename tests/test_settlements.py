@@ -5,7 +5,6 @@ from datetime import date
 import pytest
 
 from openerp.bootstrap import init_engine
-from openerp.core.context import RequestContext
 from openerp.core.posting import DocumentPostingService, InvalidPostingError
 from openerp.core.repository import Repository
 from openerp.db import transaction

@@ -6,10 +6,10 @@ from sqlalchemy import select
 
 from openerp.core.decimal import to_decimal
 from openerp.core.naming import catalog_table, document_table
-from openerp.modules.trade.settlements import unpaid_balance
 from openerp.core.posting import InvalidPostingError, PostingContext
 from openerp.core.registers import RegisterService
 from openerp.core.repository import Repository
+from openerp.modules.trade.settlements import unpaid_balance
 
 
 def post_receipt(context: PostingContext) -> None:
@@ -237,7 +237,12 @@ def post_payment(context: PostingContext, account_type: str) -> None:
     registers = RegisterService(context.connection, context.registry, context.context)
     document = context.document
     _validate_allocation(context)
-    _ensure_money_account(context, document["money_account_id"], account_type, document["currency_id"])
+    _ensure_money_account(
+        context,
+        document["money_account_id"],
+        account_type,
+        document["currency_id"],
+    )
     multiplier = 1 if document["direction"] == "incoming" else -1
     amount_minor = document["amount_minor"] * multiplier
     registers.add_movement(

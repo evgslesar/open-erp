@@ -8,7 +8,6 @@ import uvicorn
 
 from openerp.bootstrap import init_engine
 from openerp.config import get_settings
-from openerp.i18n import compile_translation_catalogs
 from openerp.core.backup import backup_sqlite, verify_backup
 from openerp.core.context import RequestContext
 from openerp.core.import_export import (
@@ -23,6 +22,7 @@ from openerp.core.import_export import (
 from openerp.core.registers import RegisterService
 from openerp.core.security import set_user_password
 from openerp.db import transaction
+from openerp.i18n import compile_translation_catalogs
 from openerp.modules.trade.demo import seed_demo as seed_trade_demo
 from openerp.modules.trade.reports import stock_balance_report
 

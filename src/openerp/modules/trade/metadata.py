@@ -310,7 +310,13 @@ cash_register = AccumulationRegisterDef(
     label="Денежные средства",
     dimensions=(
         FieldDef("account_type", FieldType.STRING, "Тип счета", required=True, indexed=True),
-        FieldDef("money_account_id", FieldType.INTEGER, "Денежный счет", required=True, indexed=True),
+        FieldDef(
+            "money_account_id",
+            FieldType.INTEGER,
+            "Денежный счет",
+            required=True,
+            indexed=True,
+        ),
         FieldDef(
             "cash_flow_category_id",
             FieldType.INTEGER,
@@ -369,7 +375,12 @@ trade_module = ModuleDef(
         cash_payment,
         bank_payment,
     ),
-    accumulation_registers=(stock_register, stock_reserved_register, settlements_register, cash_register),
+    accumulation_registers=(
+        stock_register,
+        stock_reserved_register,
+        settlements_register,
+        cash_register,
+    ),
     information_registers=(price_register, currency_rate_register),
     reports=(
         ReportDef("stock_balance", "Остатки товаров", "trade.stock_balance_report"),

@@ -18,6 +18,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
           </svg>
           <input type="search" name="q" x-model="query" x-ref="searchInput"
+                 data-testid="global-search-input"
                  @input.debounce.300ms="fetchResults()"
                  @focus="open = true; if (query.trim()) fetchResults()"
                  @keydown.escape.prevent="closePanel()"
@@ -36,15 +37,16 @@
 
     <div x-show="open && (loading || results.length > 0 || (query.trim() && !loading))"
          x-cloak
+         data-testid="global-search-dropdown"
          class="mt-2 bg-white border border-surface-border rounded-xl shadow-xl overflow-hidden max-h-[50vh] overflow-y-auto">
       <template x-if="loading">
         <div class="px-4 py-3 text-sm text-slate-400" x-text="i18n.searching"></div>
       </template>
       <template x-if="!loading && query.trim() && results.length === 0">
-        <div class="px-4 py-3 text-sm text-slate-400" x-text="i18n.noResults"></div>
+        <div class="px-4 py-3 text-sm text-slate-400" data-testid="global-search-empty" x-text="i18n.noResults"></div>
       </template>
       <template x-for="item in results" :key="item.group_key + '-' + item.id">
-        <a :href="item.url" @click="closePanel()"
+        <a :href="item.url" @click="closePanel()" data-testid="global-search-hit"
            class="flex items-start gap-2.5 px-4 py-2.5 hover:bg-slate-50 border-b border-surface-border last:border-0">
           <span class="shrink-0 text-xs text-slate-400 uppercase w-16 pt-0.5"
                 x-text="item.type === 'catalog' ? i18n.catalogAbbr : i18n.docAbbr"></span>
@@ -55,6 +57,7 @@
         </a>
       </template>
       <a x-show="query.trim() && results.length > 0" :href="'/search?q=' + encodeURIComponent(query)"
+         data-testid="global-search-all"
          class="block px-4 py-2 text-xs text-center text-primary hover:bg-slate-50 font-medium"
          x-text="i18n.allResults">
       </a>

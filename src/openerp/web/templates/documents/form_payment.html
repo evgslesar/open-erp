@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-4xl space-y-5" x-data="paymentAllocationForm({{ document | tojson }}, {{ (references.get('counterparty_id') or []) | tojson }})">
+<div class="max-w-4xl space-y-5" x-data='paymentAllocationForm({{ document | tojson }}, {{ (references.get("counterparty_id") or []) | tojson }})'>
   <div>
     <nav class="text-xs text-slate-400 mb-1">
       <a href="/" class="hover:text-primary">{{ _('Главная') }}</a>

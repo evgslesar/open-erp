@@ -5,7 +5,6 @@ from sqlalchemy.engine import Connection
 
 from openerp.core.naming import document_table
 
-
 ALLOCATABLE_DOCUMENT_TYPES = ("sale", "receipt")
 PAYMENT_DOCUMENT_TYPES = ("cash_payment", "bank_payment")
 

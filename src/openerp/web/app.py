@@ -6,16 +6,18 @@ import json
 from datetime import date
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.staticfiles import StaticFiles
-from markupsafe import Markup
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from starlette.middleware.sessions import SessionMiddleware
 
 from openerp.bootstrap import init_engine
 from openerp.config import get_settings
+from openerp.core.audit import list_audit_log, list_operation_log
 from openerp.core.context import RequestContext
 from openerp.core.import_export import (
     catalog_template_rows,
@@ -38,9 +40,6 @@ from openerp.core.posting import (
 from openerp.core.registers import RegisterService
 from openerp.core.repository import DocumentStateError, Repository
 from openerp.core.search import global_search
-from urllib.parse import urlencode
-
-from openerp.core.audit import list_audit_log, list_operation_log
 from openerp.core.security import (
     AuthenticationError,
     PermissionDenied,
@@ -614,13 +613,15 @@ def create_app() -> FastAPI:
         upload = form.get("file")
         dry_run = form.get("dry_run") == "1"
         if upload is None or not hasattr(upload, "read"):
+            data = _base_context(request, context)
+            _ = data["_"]
             return _render(
                 request,
                 "catalogs/import.html",
                 context=context,
                 extra={
                     "catalog": catalog,
-                    "result": {"errors": [{"row": 0, "error": _("Файл не выбран")}]},
+                    "result": {"imported": 0, "errors": [{"row": 0, "error": _("Файл не выбран")}]},
                 },
                 status_code=400,
             )
