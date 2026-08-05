@@ -89,6 +89,79 @@ def test_create_document_via_form(client):
     assert "черновик" in view.text
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("lines.0.price", None, "Цена"),
+        ("lines.0.quantity", "NaN", "Количество"),
+        ("lines.0.quantity", "Infinity", "Количество"),
+        ("lines.0.amount_minor", "-1", "Сумма"),
+    ],
+)
+def test_document_form_rejects_invalid_line_values(client, field, value, message):
+    test_client, master = client
+    form = _receipt_form(master)
+    if value is None:
+        form.pop(field)
+    else:
+        form[field] = value
+
+    response = test_client.post(
+        "/documents/receipt/new", data=form, follow_redirects=False
+    )
+
+    assert response.status_code == 400
+    assert message in response.text
+
+
+def test_catalog_form_rejects_duplicate_name(client):
+    test_client, _ = client
+
+    response = test_client.post(
+        "/catalogs/product/new",
+        data={"name": "widget", "sku": "W2", "unit": "pcs"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "уже существует" in response.text
+
+
+def test_document_form_rejects_empty_table_part(client):
+    test_client, master = client
+
+    response = test_client.post(
+        "/documents/receipt/new",
+        data={
+            "date": date.today().isoformat(),
+            "counterparty_id": str(master["counterparty_id"]),
+            "warehouse_id": str(master["warehouse_id"]),
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "Товары" in response.text
+
+
+def test_inventory_adjustment_rejects_zero_delta(client):
+    test_client, master = client
+
+    response = test_client.post(
+        "/documents/inventory_adjustment/new",
+        data={
+            "date": date.today().isoformat(),
+            "warehouse_id": str(master["warehouse_id"]),
+            "lines.0.product_id": str(master["product_id"]),
+            "lines.0.quantity_delta": "0",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "не должно быть нулевым" in response.text
+
+
 def test_post_and_unpost_via_web(client):
     test_client, master = client
     create = test_client.post(

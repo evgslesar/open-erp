@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import and_, delete, desc, insert, select, update
+from sqlalchemy import and_, delete, desc, func, insert, select, update
 from sqlalchemy.engine import Connection
 
 from openerp.core.audit import log_audit, log_operation
 from openerp.core.context import RequestContext
-from openerp.core.metadata import DocumentStatus, MetadataRegistry
+from openerp.core.metadata import DocumentDef, DocumentStatus, FieldDef, FieldType, MetadataRegistry
 from openerp.core.naming import catalog_table, document_table, table_part_table
 from openerp.core.schema import utcnow
 from openerp.core.security import require_permission
@@ -16,6 +17,86 @@ from openerp.core.security import require_permission
 
 class DocumentStateError(RuntimeError):
     """Raised when a document operation is blocked by the document's status."""
+
+
+class FormValidationError(ValueError):
+    """Raised when submitted form data fails server-side validation.
+
+    Subclassing :class:`ValueError` keeps the bare ``int()`` /
+    ``date.fromisoformat()`` escape points catchable by the same exception
+    handler, while letting us attach a clean Russian message for the user.
+    Mapped to HTTP 400 in ``web/app.py``.
+    """
+
+
+def _validate_required_field(field: FieldDef, value: Any, *, in_row: bool = False) -> None:
+    suffix = " в строке" if in_row else ""
+    if field.required and (value is None or value == ""):
+        raise FormValidationError(
+            f"Не заполнено обязательное поле «{field.label}»{suffix}"
+        )
+    if field.required and field.name.endswith("_id") and int(value) <= 0:
+        raise FormValidationError(
+            f"Не заполнено обязательное поле «{field.label}»{suffix}"
+        )
+
+
+def _validate_decimal_field(field: FieldDef, value: Any) -> Decimal | None:
+    if value is None or value == "" or field.type != FieldType.DECIMAL:
+        return None
+    try:
+        decimal_value = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise FormValidationError(
+            f"Некорректное значение поля «{field.label}»: {value!r}"
+        ) from exc
+    if not decimal_value.is_finite():
+        raise FormValidationError(
+            f"Некорректное значение поля «{field.label}»: {value!r}"
+        )
+    return decimal_value
+
+
+def validate_document_values(
+    document_def: DocumentDef,
+    header: dict[str, Any],
+    table_parts: dict[str, list[dict[str, Any]]] | None,
+) -> None:
+    """Validate metadata requirements and shared document business rules."""
+
+    for field in document_def.fields:
+        value = header.get(field.name)
+        _validate_required_field(field, value)
+        _validate_decimal_field(field, value)
+        if field.name == "amount_minor" and value is not None and int(value) <= 0:
+            raise FormValidationError(f"«{field.label}» должно быть положительным")
+
+    parts = table_parts or {}
+    for part in document_def.table_parts:
+        rows = parts.get(part.name, [])
+        if not rows:
+            raise FormValidationError(f"Не заполнена табличная часть «{part.label}»")
+        for row in rows:
+            for field in part.fields:
+                value = row.get(field.name)
+                _validate_required_field(field, value, in_row=True)
+                decimal_value = _validate_decimal_field(field, value)
+                if field.name == "quantity" and decimal_value is not None:
+                    if decimal_value <= 0:
+                        raise FormValidationError("Количество должно быть положительным")
+                if field.name == "quantity_delta" and decimal_value is not None:
+                    if decimal_value == 0:
+                        raise FormValidationError("Изменение количества не должно быть нулевым")
+                if field.name == "amount_minor" and value is not None and int(value) <= 0:
+                    raise FormValidationError(
+                        f"«{field.label}» в строке должно быть положительным"
+                    )
+
+
+def _catalog_name_matches(connection: Connection, column, name: str):
+    if connection.dialect.name == "sqlite":
+        return func.unicode_lower(column) == name.casefold()
+    return func.lower(column) == name.casefold()
 
 
 class Repository:
@@ -34,6 +115,25 @@ class Repository:
             "created_by": self.context.user_id,
             "updated_by": self.context.user_id,
         }
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise FormValidationError("Не заполнено наименование")
+        payload["name"] = name
+        # Catalog names are not unique at the database level. Reject an existing
+        # live name here so normal create operations cannot introduce duplicates.
+        existing = self.connection.execute(
+            select(table.c.id).where(
+                and_(
+                    _catalog_name_matches(self.connection, table.c.name, name),
+                    table.c.organization_id == self.context.organization_id,
+                    table.c.deletion_mark.is_(False),
+                )
+            ).limit(1)
+        ).first()
+        if existing:
+            raise FormValidationError(
+                f"Элемент с наименованием «{name}» уже существует"
+            )
         result = self.connection.execute(insert(table).values(**payload))
         item_id = int(result.inserted_primary_key[0])
         log_audit(
@@ -102,6 +202,29 @@ class Repository:
             "updated_at": utcnow(),
             "revision": before["revision"] + 1,
         }
+        if "name" in payload:
+            name = str(payload.get("name") or "").strip()
+            if not name:
+                raise FormValidationError("Не заполнено наименование")
+            payload["name"] = name
+        # Reject renaming to a name another live item in this catalog already
+        # has (see create_catalog_item for the rationale).
+        name = payload.get("name")
+        if name and name != before.get("name"):
+            existing = self.connection.execute(
+                select(table.c.id).where(
+                    and_(
+                        _catalog_name_matches(self.connection, table.c.name, name),
+                        table.c.organization_id == self.context.organization_id,
+                        table.c.deletion_mark.is_(False),
+                        table.c.id != item_id,
+                    )
+                ).limit(1)
+            ).first()
+            if existing:
+                raise FormValidationError(
+                    f"Элемент с наименованием «{name}» уже существует"
+                )
         self.connection.execute(
             update(table)
             .where(
@@ -192,6 +315,8 @@ class Repository:
         table_parts: dict[str, list[dict[str, Any]]] | None = None,
     ) -> int:
         require_permission(self.connection, self.context, f"document:{document_name}", "create")
+        document_def = self.registry.document(document_name)
+        validate_document_values(document_def, values, table_parts)
         table = self.metadata.tables[document_table(document_name)]
         payload = {
             **values,
@@ -328,6 +453,10 @@ class Repository:
         document_def = self.registry.document(document_name)
         table = self.metadata.tables[document_table(document_name)]
         before = self.get_document(document_name, document_id)
+        if before.get("deletion_mark"):
+            raise DocumentStateError(
+                f"Document {document_name}/{document_id} is deleted; cannot edit"
+            )
         if str(before["status"]) == DocumentStatus.POSTED.value:
             raise DocumentStateError(
                 f"Document {document_name}/{document_id} is posted; unpost before editing"
@@ -338,6 +467,16 @@ class Repository:
         new_date = values.get("date", before["date"])
         if new_date != before["date"]:
             ensure_period_open(self.connection, self.context, new_date)
+        effective_table_parts = table_parts
+        if effective_table_parts is None:
+            effective_table_parts = {
+                part.name: before.get(part.name, []) for part in document_def.table_parts
+            }
+        validate_document_values(
+            document_def,
+            {**before, **values},
+            effective_table_parts,
+        )
         payload = {
             **values,
             "updated_by": self.context.user_id,
@@ -360,7 +499,7 @@ class Repository:
             self.connection.execute(
                 delete(part_table).where(part_table.c.document_id == document_id)
             )
-            for line_no, row in enumerate((table_parts or {}).get(part.name, []), start=1):
+            for line_no, row in enumerate(effective_table_parts.get(part.name, []), start=1):
                 self.connection.execute(
                     part_table.insert().values(
                         document_id=document_id, line_no=line_no, **row

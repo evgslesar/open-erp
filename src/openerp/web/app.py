@@ -4,6 +4,7 @@ import inspect
 import io
 import json
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlencode
@@ -13,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
+from sqlalchemy.exc import IntegrityError
 from starlette.middleware.sessions import SessionMiddleware
 
 from openerp.bootstrap import init_engine
@@ -27,7 +29,14 @@ from openerp.core.import_export import (
     read_csv_rows,
     read_xlsx_rows,
 )
-from openerp.core.metadata import CatalogDef, DocumentDef, FieldDef, FieldType, TablePartDef
+from openerp.core.metadata import (
+    CatalogDef,
+    DocumentDef,
+    DocumentStatus,
+    FieldDef,
+    FieldType,
+    TablePartDef,
+)
 from openerp.core.posting import (
     ClosedPeriodError,
     DocumentPostingService,
@@ -38,7 +47,12 @@ from openerp.core.posting import (
     set_closed_period,
 )
 from openerp.core.registers import RegisterService
-from openerp.core.repository import DocumentStateError, Repository
+from openerp.core.repository import (
+    DocumentStateError,
+    FormValidationError,
+    Repository,
+    validate_document_values,
+)
 from openerp.core.search import global_search
 from openerp.core.security import (
     AuthenticationError,
@@ -134,26 +148,53 @@ def normalize_catalog_form(catalog: CatalogDef, form: dict[str, str]) -> dict:
         if raw_value is None:
             continue
         if field.type in (FieldType.INTEGER, FieldType.MONEY):
-            values[field.name] = int(raw_value or 0)
+            if raw_value == "" and not field.required:
+                continue
+            try:
+                values[field.name] = int(raw_value or 0)
+            except ValueError as exc:
+                raise FormValidationError(
+                    f"Некорректное значение поля «{field.label}»: {raw_value!r}"
+                ) from exc
         elif field.type == FieldType.BOOLEAN:
             values[field.name] = raw_value in ("1", "true", "on")
         else:
             values[field.name] = raw_value
+    # Empty-name guard. The `name` column is NOT NULL but "" satisfies NOT NULL,
+    # so without this check a blank name would persist silently.
+    name = (values.get("name") or "").strip()
+    if not name:
+        raise FormValidationError("Не заполнено наименование")
+    values["name"] = name
+    for field in catalog.fields:
+        value = values.get(field.name)
+        if field.required and (value is None or value == ""):
+            raise FormValidationError(f"Не заполнено обязательное поле «{field.label}»")
+        if field.required and field.name.endswith("_id") and value <= 0:
+            raise FormValidationError(f"Не заполнено обязательное поле «{field.label}»")
     return values
 
 
 def coerce_field(field: FieldDef, raw: str | None) -> any:
     if raw is None or raw == "":
         return None
-    if field.type in (FieldType.INTEGER, FieldType.MONEY):
-        return int(raw)
-    if field.type == FieldType.DECIMAL:
-        return str(raw)
-    if field.type == FieldType.DATE:
-        return date.fromisoformat(raw)
-    if field.type == FieldType.BOOLEAN:
-        return raw in ("1", "true", "on")
-    return raw
+    try:
+        if field.type in (FieldType.INTEGER, FieldType.MONEY):
+            return int(raw)
+        if field.type == FieldType.DECIMAL:
+            value = Decimal(raw)
+            if not value.is_finite():
+                raise ValueError
+            return str(raw)
+        if field.type == FieldType.DATE:
+            return date.fromisoformat(raw)
+        if field.type == FieldType.BOOLEAN:
+            return raw in ("1", "true", "on")
+        return raw
+    except (InvalidOperation, ValueError) as exc:
+        raise FormValidationError(
+            f"Некорректное значение поля «{field.label}»: {raw!r}"
+        ) from exc
 
 
 def parse_document_form(
@@ -169,8 +210,10 @@ def parse_document_form(
             part_name, index_str, field_name = segments
             try:
                 index = int(index_str)
-            except ValueError:
-                continue
+            except ValueError as exc:
+                raise FormValidationError(
+                    f"Некорректный индекс строки: {index_str!r}"
+                ) from exc
             bucket = table_parts[part_name]
             while len(bucket) <= index:
                 bucket.append({})
@@ -184,7 +227,12 @@ def parse_document_form(
         if coerced is not None:
             normalized_header[field.name] = coerced
     if header.get("date"):
-        normalized_header["date"] = date.fromisoformat(header["date"])
+        try:
+            normalized_header["date"] = date.fromisoformat(header["date"])
+        except ValueError as exc:
+            raise FormValidationError(
+                f"Некорректное значение поля «Дата»: {header['date']!r}"
+            ) from exc
     if header.get("number"):
         normalized_header["number"] = header["number"]
     if header.get("comment"):
@@ -205,6 +253,14 @@ def parse_document_form(
         table_parts[part.name] = cleaned
 
     return normalized_header, table_parts
+
+
+def validate_document_form(
+    document_def: DocumentDef,
+    header: dict,
+    table_parts: dict[str, list[dict]],
+) -> None:
+    validate_document_values(document_def, header, table_parts)
 
 
 def catalog_name_for_field(field_name: str, registry) -> str | None:
@@ -431,6 +487,20 @@ def create_app() -> FastAPI:
     @app.exception_handler(PermissionDenied)
     async def on_permission_denied(request: Request, exc: PermissionDenied):
         return _render_error(request, str(exc), 403)
+
+    @app.exception_handler(FormValidationError)
+    async def on_form_validation_error(request: Request, exc: FormValidationError):
+        # Form-level validation failures (bad integer/date, negative quantity,
+        # empty/duplicate name, missing required FK) — surface as a clean 400
+        # with the Russian message, not an uncaught 500 with a traceback.
+        return _render_error(request, str(exc), 400)
+
+    @app.exception_handler(IntegrityError)
+    async def on_integrity_error(request: Request, exc: IntegrityError):
+        # Safety net for DB-level constraint violations that the explicit
+        # validators didn't catch (e.g. a NOT NULL column the form dropped).
+        # Without this handler SQLAlchemy's IntegrityError surfaces as a 500.
+        return _render_error(request, "Нарушение ограничений целостности данных", 400)
 
     @app.get("/set-locale/{locale}")
     def set_locale(request: Request, locale: str):
@@ -778,6 +848,7 @@ def create_app() -> FastAPI:
         document_def = registry.document(document_name)
         form = dict(await request.form())
         values, table_parts = parse_document_form(document_def, form)
+        validate_document_form(document_def, values, table_parts)
         with transaction(engine) as connection:
             repository = Repository(connection, registry, context)
             document_id = repository.create_document(document_name, values, table_parts)
@@ -820,8 +891,21 @@ def create_app() -> FastAPI:
         context: CurrentContext,
     ):
         document_def = registry.document(document_name)
+        # Status invariant first: a posted document cannot be edited regardless
+        # of what the form contains. Checked before parse/validate so an empty
+        # body (e.g. an action click) still surfaces "is posted; unpost before
+        # editing" rather than tripping form validation on missing fields.
+        with transaction(engine) as connection:
+            repository = Repository(connection, registry, context)
+            existing = repository.get_document(document_name, document_id)
+            if str(existing["status"]) == DocumentStatus.POSTED.value:
+                raise DocumentStateError(
+                    f"Document {document_name}/{document_id} is posted; "
+                    "unpost before editing"
+                )
         form = dict(await request.form())
         values, table_parts = parse_document_form(document_def, form)
+        validate_document_form(document_def, values, table_parts)
         with transaction(engine) as connection:
             repository = Repository(connection, registry, context)
             repository.update_document(document_name, document_id, values, table_parts)
@@ -850,8 +934,6 @@ def create_app() -> FastAPI:
         if document_def.posting_handler is None:
             raise DocumentStateError(f"Document {document_name} cannot be posted")
         with transaction(engine) as connection:
-            repository = Repository(connection, registry, context)
-            repository.get_document(document_name, document_id)
             DocumentPostingService(connection, registry, context).post(
                 document_name, document_id
             )
@@ -866,8 +948,6 @@ def create_app() -> FastAPI:
         context: CurrentContext,
     ):
         with transaction(engine) as connection:
-            repository = Repository(connection, registry, context)
-            repository.get_document(document_name, document_id)
             DocumentPostingService(connection, registry, context).unpost(
                 document_name, document_id
             )

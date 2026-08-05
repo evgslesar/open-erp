@@ -173,6 +173,12 @@ class DocumentPostingService:
             raise ValueError(f"Document has no posting handler: {document_name}")
 
         document = self.repository.get_document(document_name, document_id)
+        if document.get("deletion_mark"):
+            from openerp.core.repository import DocumentStateError
+
+            raise DocumentStateError(
+                f"Document {document_name}/{document_id} is deleted; cannot post"
+            )
         self._ensure_period_open(document["date"])
 
         from openerp.core.registers import NegativeStockBalanceError, RegisterService
@@ -220,6 +226,10 @@ class DocumentPostingService:
 
         require_permission(self.connection, self.context, f"document:{document_name}", "unpost")
         document = self.repository.get_document(document_name, document_id)
+        if document.get("deletion_mark"):
+            raise DocumentStateError(
+                f"Document {document_name}/{document_id} is deleted; cannot unpost"
+            )
         if str(document["status"]) != DocumentStatus.POSTED.value:
             raise DocumentStateError(
                 f"Document {document_name}/{document_id} is not posted; cannot unpost"

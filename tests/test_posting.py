@@ -13,7 +13,7 @@ from openerp.core.posting import (
     set_closed_period,
 )
 from openerp.core.registers import RegisterService
-from openerp.core.repository import DocumentStateError, Repository
+from openerp.core.repository import DocumentStateError, FormValidationError, Repository
 from openerp.db import transaction
 
 
@@ -89,6 +89,46 @@ def test_posting_is_idempotent(app_state, context):
         registers = RegisterService(connection, registry, context)
         balance = registers.balance("stock", date.today())[0]
         assert balance["quantity"] == 10
+
+
+def test_deleted_document_cannot_be_posted_through_service(app_state, context):
+    engine, registry = app_state
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        currency_id, warehouse_id, counterparty_id, product_id = create_master_data(repository)
+        receipt_id = create_document(
+            repository,
+            "receipt",
+            warehouse_id,
+            counterparty_id,
+            product_id,
+            currency_id,
+            10,
+        )
+        repository.delete_document("receipt", receipt_id)
+
+        with pytest.raises(DocumentStateError, match="is deleted"):
+            repository.update_document("receipt", receipt_id, {"comment": "blocked"})
+        with pytest.raises(DocumentStateError, match="is deleted"):
+            DocumentPostingService(connection, registry, context).post("receipt", receipt_id)
+
+
+def test_repository_rejects_document_without_required_lines(app_state, context):
+    engine, registry = app_state
+    with transaction(engine) as connection:
+        repository = Repository(connection, registry, context)
+        _, warehouse_id, counterparty_id, _ = create_master_data(repository)
+
+        with pytest.raises(FormValidationError, match="Товары"):
+            repository.create_document(
+                "receipt",
+                {
+                    "date": date.today(),
+                    "counterparty_id": counterparty_id,
+                    "warehouse_id": warehouse_id,
+                },
+                {"lines": []},
+            )
 
 
 def test_unpost_and_repost_restore_balances(app_state, context):
