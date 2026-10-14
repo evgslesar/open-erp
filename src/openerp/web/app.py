@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 import io
-import json
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -13,7 +12,6 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from markupsafe import Markup
 from sqlalchemy.exc import IntegrityError
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -79,9 +77,11 @@ def _tojson_default(value):
     raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
 
 
-templates.env.filters["tojson"] = lambda value: Markup(
-    json.dumps(value, ensure_ascii=False, default=_tojson_default)
-)
+templates.env.policies["json.dumps_kwargs"] = {
+    "ensure_ascii": False,
+    "sort_keys": False,
+    "default": _tojson_default,
+}
 
 
 def _base_context(request: Request, context: RequestContext | None) -> dict:

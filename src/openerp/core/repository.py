@@ -335,9 +335,15 @@ class Repository:
 
         for part_name, rows in (table_parts or {}).items():
             part_table = self.metadata.tables[table_part_table(document_name, part_name)]
+            part_def = next(part for part in document_def.table_parts if part.name == part_name)
             for line_no, row in enumerate(rows, start=1):
+                row_values = {
+                    field.name: row[field.name] for field in part_def.fields if field.name in row
+                }
                 self.connection.execute(
-                    part_table.insert().values(document_id=document_id, line_no=line_no, **row)
+                    part_table.insert().values(
+                        document_id=document_id, line_no=line_no, **row_values
+                    )
                 )
 
         log_audit(
@@ -346,12 +352,15 @@ class Repository:
             f"document:{document_name}",
             "create",
             document_id,
-            after=payload,
+            after=self._get_document(document_name, document_id),
         )
         return document_id
 
     def get_document(self, document_name: str, document_id: int) -> dict[str, Any]:
         require_permission(self.connection, self.context, f"document:{document_name}", "read")
+        return self._get_document(document_name, document_id)
+
+    def _get_document(self, document_name: str, document_id: int) -> dict[str, Any]:
         table = self.metadata.tables[document_table(document_name)]
         row = self.connection.execute(
             select(table).where(
@@ -494,15 +503,18 @@ class Repository:
             .values(**payload)
         )
 
-        for part in document_def.table_parts:
+        for part in document_def.table_parts if table_parts is not None else ():
             part_table = self.metadata.tables[table_part_table(document_name, part.name)]
             self.connection.execute(
                 delete(part_table).where(part_table.c.document_id == document_id)
             )
             for line_no, row in enumerate(effective_table_parts.get(part.name, []), start=1):
+                row_values = {
+                    field.name: row[field.name] for field in part.fields if field.name in row
+                }
                 self.connection.execute(
                     part_table.insert().values(
-                        document_id=document_id, line_no=line_no, **row
+                        document_id=document_id, line_no=line_no, **row_values
                     )
                 )
 
@@ -513,7 +525,7 @@ class Repository:
             "update",
             document_id,
             before=before,
-            after={**before, **payload},
+            after=self._get_document(document_name, document_id),
         )
 
     def delete_document(self, document_name: str, document_id: int) -> None:

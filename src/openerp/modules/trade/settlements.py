@@ -26,6 +26,7 @@ def allocated_payments_sum(
     doc_id: int,
     *,
     exclude_payment_id: int | None = None,
+    exclude_payment_type: str | None = None,
 ) -> int:
     expected_direction = "incoming" if doc_type == "sale" else "outgoing"
     total = 0
@@ -43,7 +44,7 @@ def allocated_payments_sum(
         ).fetchall()
         for row in rows:
             mapping = dict(row._mapping)
-            if exclude_payment_id is not None and mapping["id"] == exclude_payment_id:
+            if payment_type == exclude_payment_type and mapping["id"] == exclude_payment_id:
                 continue
             if mapping["direction"] != expected_direction:
                 continue
@@ -58,6 +59,7 @@ def unpaid_balance(
     doc_id: int,
     *,
     exclude_payment_id: int | None = None,
+    exclude_payment_type: str | None = None,
 ) -> int:
     doc_total = abs(document_total(connection, doc_type, doc_id))
     paid = allocated_payments_sum(
@@ -66,6 +68,7 @@ def unpaid_balance(
         doc_type,
         doc_id,
         exclude_payment_id=exclude_payment_id,
+        exclude_payment_type=exclude_payment_type,
     )
     return max(doc_total - paid, 0)
 

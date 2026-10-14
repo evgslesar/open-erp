@@ -27,12 +27,20 @@ def create_db_engine(database_url: str) -> Engine:
     if database_url.startswith("sqlite"):
         @event.listens_for(engine, "connect")
         def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+            # Let SQLAlchemy start transactions explicitly. SQLite's legacy
+            # driver mode otherwise allows a SAVEPOINT to commit independently
+            # of engine.begin() when no preceding write has started a transaction.
+            dbapi_connection.isolation_level = None
             dbapi_connection.create_function("unicode_lower", 1, _unicode_lower)
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA busy_timeout=5000")
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
+
+        @event.listens_for(engine, "begin")
+        def _begin_sqlite_transaction(connection) -> None:
+            connection.exec_driver_sql("BEGIN")
 
     return engine
 

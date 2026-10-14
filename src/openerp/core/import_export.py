@@ -5,6 +5,7 @@ import io
 from collections import defaultdict
 from collections.abc import Iterable
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import IO, Any
 
@@ -32,7 +33,7 @@ def import_catalog_csv(
 
 def read_csv_rows(source: Path | str | bytes | IO[bytes]) -> list[dict[str, str]]:
     if isinstance(source, (str, Path)):
-        with open(source, encoding="utf-8", newline="") as handle:
+        with open(source, encoding="utf-8-sig", newline="") as handle:
             return list(csv.DictReader(handle))
     if isinstance(source, bytes):
         text = source.decode("utf-8-sig")
@@ -124,7 +125,7 @@ def import_initial_stock_rows(
     connection: Connection,
     registry: MetadataRegistry,
     context: RequestContext,
-    rows: list[dict[str, str]],
+    rows: list[dict[str, Any]],
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Create and post an inventory_adjustment document from CSV/XLSX rows.
@@ -141,9 +142,10 @@ def import_initial_stock_rows(
     lines_by_warehouse: dict[int, list[dict[str, Any]]] = defaultdict(list)
 
     for index, row in enumerate(rows, start=2):
-        sku = (row.get("product_sku") or "").strip()
-        wh = (row.get("warehouse_name") or "").strip()
-        qty_raw = (row.get("quantity") or "").strip()
+        sku = str(row.get("product_sku") or "").strip()
+        wh = str(row.get("warehouse_name") or "").strip()
+        qty_raw = row.get("quantity")
+        qty_raw = "" if qty_raw is None else str(qty_raw).strip()
         if not sku or not wh or not qty_raw:
             errors.append(
                 {"row": index, "error": "Missing product_sku, warehouse_name or quantity"}
@@ -158,12 +160,14 @@ def import_initial_stock_rows(
             errors.append({"row": index, "error": f"Unknown warehouse: {wh}"})
             continue
         try:
-            quantity = str(qty_raw)
-        except (TypeError, ValueError):
+            quantity = Decimal(qty_raw)
+            if not quantity.is_finite() or quantity == 0:
+                raise ValueError
+        except (InvalidOperation, ValueError):
             errors.append({"row": index, "error": f"Invalid quantity: {qty_raw}"})
             continue
         lines_by_warehouse[warehouse_id].append(
-            {"product_id": product_id, "quantity_delta": quantity}
+            {"product_id": product_id, "quantity_delta": str(quantity)}
         )
 
     if errors or dry_run or not lines_by_warehouse:

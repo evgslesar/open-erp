@@ -5,11 +5,11 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from openerp.core.decimal import to_decimal
-from openerp.core.naming import catalog_table, document_table
+from openerp.core.naming import catalog_table, document_table, table_part_table
 from openerp.core.posting import InvalidPostingError, PostingContext
 from openerp.core.registers import RegisterService
 from openerp.core.repository import Repository
-from openerp.modules.trade.settlements import unpaid_balance
+from openerp.modules.trade.settlements import ALLOCATABLE_DOCUMENT_TYPES, unpaid_balance
 
 
 def post_receipt(context: PostingContext) -> None:
@@ -236,6 +236,8 @@ def post_bank_payment(context: PostingContext) -> None:
 def post_payment(context: PostingContext, account_type: str) -> None:
     registers = RegisterService(context.connection, context.registry, context.context)
     document = context.document
+    if document["direction"] not in ("incoming", "outgoing"):
+        raise InvalidPostingError("Направление платежа должно быть incoming или outgoing")
     _validate_allocation(context)
     _ensure_money_account(
         context,
@@ -283,13 +285,14 @@ def _validate_allocation(context: PostingContext) -> None:
         raise InvalidPostingError(
             "Для распределения платежа нужны и тип документа, и идентификатор"
         )
-    try:
-        context.registry.document(doc_type)
-    except ValueError as error:
-        raise InvalidPostingError(f"Неизвестный тип документа: {doc_type}") from error
+    if doc_type not in ALLOCATABLE_DOCUMENT_TYPES:
+        raise InvalidPostingError("Платеж можно распределить только на реализацию или поступление")
+    expected_direction = "incoming" if doc_type == "sale" else "outgoing"
+    if document["direction"] != expected_direction:
+        raise InvalidPostingError("Направление платежа не соответствует документу-основанию")
     table = context.connection.engine._openerp_metadata.tables[document_table(doc_type)]
     row = context.connection.execute(
-        select(table.c.id).where(
+        select(table).where(
             table.c.id == doc_id,
             table.c.organization_id == context.context.organization_id,
             table.c.deletion_mark.is_(False),
@@ -297,18 +300,21 @@ def _validate_allocation(context: PostingContext) -> None:
     ).first()
     if row is None:
         raise InvalidPostingError(f"Документ {doc_type}/{doc_id} не найден")
-    base_doc = context.connection.execute(
-        select(table).where(table.c.id == doc_id)
-    ).first()
-    if base_doc is None:
-        raise InvalidPostingError(f"Документ {doc_type}/{doc_id} не найден")
-    base_mapping = dict(base_doc._mapping)
+    base_mapping = dict(row._mapping)
     if base_mapping.get("status") != "posted":
         raise InvalidPostingError("Документ-основание должен быть проведён")
     payment_counterparty = document.get("counterparty_id")
     base_counterparty = base_mapping.get("counterparty_id")
     if payment_counterparty != base_counterparty:
         raise InvalidPostingError("Контрагент платежа не совпадает с документом-основанием")
+    lines = context.connection.engine._openerp_metadata.tables[table_part_table(doc_type, "lines")]
+    currencies = set(
+        context.connection.execute(
+            select(lines.c.currency_id).where(lines.c.document_id == doc_id).distinct()
+        ).scalars()
+    )
+    if currencies != {document["currency_id"]}:
+        raise InvalidPostingError("Валюта платежа не совпадает с валютой документа-основания")
     payment_amount = int(document.get("amount_minor") or 0)
     remaining = unpaid_balance(
         context.connection,
@@ -316,6 +322,7 @@ def _validate_allocation(context: PostingContext) -> None:
         doc_type,
         doc_id,
         exclude_payment_id=int(document["id"]) if document.get("id") else None,
+        exclude_payment_type=context.document_name,
     )
     if payment_amount > remaining:
         raise InvalidPostingError(

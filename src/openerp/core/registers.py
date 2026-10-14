@@ -225,13 +225,20 @@ class RegisterService:
         for key, value in (filters or {}).items():
             conditions.append(table.c[key] == value)
         dimension_columns = [table.c[dim.name] for dim in register.dimensions]
-        latest = (
-            select(func.max(table.c.id).label("id"))
+        ranked = (
+            select(
+                table.c.id,
+                func.row_number()
+                .over(
+                    partition_by=dimension_columns,
+                    order_by=(table.c.period.desc(), table.c.id.desc()),
+                )
+                .label("rank"),
+            )
             .where(and_(*conditions))
-            .group_by(*dimension_columns)
             .subquery()
         )
-        query = select(table).join(latest, table.c.id == latest.c.id)
+        query = select(table).join(ranked, table.c.id == ranked.c.id).where(ranked.c.rank == 1)
         return [dict(row._mapping) for row in self.connection.execute(query)]
 
     def movements(
@@ -350,20 +357,16 @@ class RegisterService:
     def _assert_stock_available(self, on_date: date) -> None:
         stock_rows = self.balance("stock", on_date)
         reserved_rows = self.balance("stock_reserved", on_date)
-        reserved_map: dict[tuple[Any, ...], Decimal] = {}
-        for row in reserved_rows:
-            key = (row["warehouse_id"], row["product_id"])
-            reserved_map[key] = to_decimal(row["quantity"])
-        for row in stock_rows:
-            key = (row["warehouse_id"], row["product_id"])
-            stock_qty = to_decimal(row["quantity"])
-            reserved_qty = reserved_map.get(key, Decimal("0"))
+        stock_map = {(row["warehouse_id"], row["product_id"]): row for row in stock_rows}
+        reserved_map = {(row["warehouse_id"], row["product_id"]): row for row in reserved_rows}
+        for key in stock_map.keys() | reserved_map.keys():
+            stock_qty = to_decimal(stock_map.get(key, {}).get("quantity", 0))
+            reserved_qty = to_decimal(reserved_map.get(key, {}).get("quantity", 0))
             available = stock_qty - reserved_qty
             if available < 0:
-                error_row = dict(row)
-                error_row["quantity"] = available
+                error_row = {"warehouse_id": key[0], "product_id": key[1], "quantity": available}
                 raise NegativeStockBalanceError("stock", error_row)
-        for row in self.balance("stock_reserved", on_date):
+        for row in reserved_rows:
             if to_decimal(row["quantity"]) < 0:
                 raise NegativeStockBalanceError("stock_reserved", dict(row))
 
@@ -375,7 +378,9 @@ class RegisterService:
         expected: dict[tuple[Any, ...], dict[str, Decimal]] = defaultdict(
             lambda: {resource.name: Decimal("0") for resource in register.resources}
         )
-        for row in self.connection.execute(select(movements)):
+        for row in self.connection.execute(
+            select(movements).where(movements.c.organization_id == self.context.organization_id)
+        ):
             mapping = dict(row._mapping)
             key = (
                 month_start(mapping["period"]),
@@ -386,7 +391,9 @@ class RegisterService:
                 expected[key][resource.name] += to_decimal(mapping[resource.name])
 
         actual: dict[tuple[Any, ...], dict[str, Decimal]] = {}
-        for row in self.connection.execute(select(totals)):
+        for row in self.connection.execute(
+            select(totals).where(totals.c.organization_id == self.context.organization_id)
+        ):
             mapping = dict(row._mapping)
             key = (
                 mapping["period_start"],
@@ -398,7 +405,10 @@ class RegisterService:
             }
 
         discrepancies: list[dict[str, Any]] = []
-        for key, expected_resources in expected.items():
+        for key in expected.keys() | actual.keys():
+            expected_resources = expected.get(
+                key, {resource.name: Decimal("0") for resource in register.resources}
+            )
             period_start, organization_id, *dimension_values = key
             actual_resources = actual.get(key, {})
             for resource in register.resources:

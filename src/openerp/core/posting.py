@@ -167,6 +167,12 @@ class DocumentPostingService:
         self.repository = Repository(connection, registry, context)
 
     def post(self, document_name: str, document_id: int) -> None:
+        # Keep the operation atomic even when a caller catches a domain error
+        # and continues using the surrounding transaction (e.g. batch imports).
+        with self.connection.begin_nested():
+            self._post(document_name, document_id)
+
+    def _post(self, document_name: str, document_id: int) -> None:
         require_permission(self.connection, self.context, f"document:{document_name}", "post")
         document_def = self.registry.document(document_name)
         if document_def.posting_handler is None:
@@ -222,6 +228,10 @@ class DocumentPostingService:
         )
 
     def unpost(self, document_name: str, document_id: int) -> None:
+        with self.connection.begin_nested():
+            self._unpost(document_name, document_id)
+
+    def _unpost(self, document_name: str, document_id: int) -> None:
         from openerp.core.repository import DocumentStateError
 
         require_permission(self.connection, self.context, f"document:{document_name}", "unpost")
